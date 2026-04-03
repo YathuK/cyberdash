@@ -152,24 +152,22 @@ export default function Dashboard() {
           </div>
         </header>
 
-        {/* Main content */}
+        {/* Main content — must scroll to show all apps */}
         <main
           className="scroll-area"
           style={{
             flex: 1,
             position: "relative",
             zIndex: 10,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
             padding: "0 24px 24px",
             minHeight: 0,
+            overflowY: "auto",
           }}
         >
           {loading ? (
-            <div style={{ color: "var(--cyan)", fontSize: 16, marginTop: 60 }}>Loading...</div>
+            <div style={{ color: "var(--cyan)", fontSize: 16, marginTop: 60, textAlign: "center" }}>Loading...</div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24, width: "100%", maxWidth: 1100 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24, width: "100%", maxWidth: 1100, margin: "0 auto" }}>
 
               {/* ===== YOUTUBE HERO CARD ===== */}
               <div
@@ -178,14 +176,14 @@ export default function Dashboard() {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 24,
-                  padding: "28px 36px",
+                  gap: 20,
+                  padding: "20px 28px",
                   background: "linear-gradient(135deg, rgba(255,0,0,0.12) 0%, rgba(17,24,39,0.8) 50%, rgba(255,0,0,0.08) 100%)",
                   border: "1px solid rgba(255,0,0,0.3)",
-                  borderRadius: 24,
+                  borderRadius: 20,
                   cursor: "pointer",
                   width: "100%",
-                  maxWidth: 560,
+                  maxWidth: 480,
                   position: "relative",
                   overflow: "hidden",
                   transform: "translateZ(0)",
@@ -197,20 +195,20 @@ export default function Dashboard() {
 
                 <div
                   style={{
-                    width: 72, height: 72, borderRadius: 18,
+                    width: 56, height: 56, borderRadius: 14,
                     background: "#FF0000",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     flexShrink: 0,
                   }}
                 >
-                  <svg width={36} height={36} viewBox="0 0 24 24" fill="#fff">
+                  <svg width={28} height={28} viewBox="0 0 24 24" fill="#fff">
                     <path d="M8 5v14l11-7z" />
                   </svg>
                 </div>
 
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: "#fff", marginBottom: 4 }}>YouTube</div>
-                  <div style={{ fontSize: 14, color: "#d1d5db" }}>Search, browse & watch while you drive</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", marginBottom: 2 }}>YouTube</div>
+                  <div style={{ fontSize: 13, color: "#d1d5db" }}>Search, browse & watch while you drive</div>
                   <div style={{
                     display: "inline-block", marginTop: 8,
                     padding: "4px 12px",
@@ -229,16 +227,15 @@ export default function Dashboard() {
 
               {/* ===== ALL OTHER APPS ===== */}
               <div style={{ width: "100%" }}>
-                <div style={{ color: "#4b5563", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: 14, textAlign: "center" }}>
+                <div style={{ color: "#4b5563", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: 12, textAlign: "center" }}>
                   Streaming & Gaming
                 </div>
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
-                    gap: 12,
-                    maxWidth: 800,
-                    margin: "0 auto",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    justifyContent: "center",
+                    gap: 10,
                   }}
                 >
                   {otherApps.map((app, i) => {
@@ -252,14 +249,15 @@ export default function Dashboard() {
                           display: "flex",
                           flexDirection: "column",
                           alignItems: "center",
-                          gap: 8,
-                          padding: "16px 10px",
+                          gap: 6,
+                          padding: "12px 10px",
                           background: "rgba(17, 24, 39, 0.6)",
                           border: "1px solid var(--cyan-border)",
-                          borderRadius: 16,
+                          borderRadius: 14,
                           cursor: "pointer",
                           position: "relative",
                           transform: "translateZ(0)",
+                          width: 100,
                         }}
                       >
                         {/* Favorite star */}

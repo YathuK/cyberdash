@@ -21,7 +21,6 @@ export async function GET(request: NextRequest) {
       return new Response("No streaming data", { status: 404 });
     }
 
-    // Find the best combined (video+audio) format
     const allFormats = [
       ...(streamingData.formats || []),
       ...(streamingData.adaptive_formats || []),
@@ -34,9 +33,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (!format) {
-      // Prefer combined formats (has both video and audio)
+      // MUST use MP4 (H.264) — this is the only format guaranteed to work
+      // on all browsers including Tesla's Chromium. WebM/VP9 may not be supported.
       format = (streamingData.formats || [])
-        .filter((f) => f.has_video && f.has_audio)
+        .filter((f) => f.has_video && f.has_audio && f.mime_type?.includes("video/mp4"))
         .sort((a, b) => {
           const aH = a.height || 0;
           const bH = b.height || 0;
@@ -48,19 +48,19 @@ export async function GET(request: NextRequest) {
     }
 
     if (!format) {
-      // Fallback to any format with video
-      format = allFormats.find((f) => f.has_video && f.has_audio);
+      // Fallback: any MP4 with video+audio
+      format = allFormats.find((f) => f.has_video && f.has_audio && f.mime_type?.includes("video/mp4"));
     }
 
     if (!format) {
-      format = allFormats.find((f) => f.has_video);
+      // Fallback: any combined format (even WebM)
+      format = (streamingData.formats || []).find((f) => f.has_video && f.has_audio);
     }
 
     if (!format) {
-      return new Response("No playable format found", { status: 404 });
+      return new Response("No playable MP4 format found", { status: 404 });
     }
 
-    // Get the stream URL - youtubei.js decipher method
     const streamUrl = await format.decipher(yt.session.player);
 
     if (!streamUrl) {
@@ -79,7 +79,8 @@ export async function GET(request: NextRequest) {
     const videoResponse = await fetch(streamUrl, { headers: fetchHeaders });
 
     const responseHeaders = new Headers();
-    responseHeaders.set("Content-Type", format.mime_type?.split(";")[0] || "video/mp4");
+    // Always report as video/mp4 for maximum browser compat
+    responseHeaders.set("Content-Type", "video/mp4");
     responseHeaders.set("Access-Control-Allow-Origin", "*");
     responseHeaders.set("Accept-Ranges", "bytes");
     responseHeaders.set("Cache-Control", "public, max-age=3600");
