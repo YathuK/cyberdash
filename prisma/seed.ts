@@ -2,9 +2,10 @@ import { PrismaClient } from "../src/generated/prisma/client.js";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
 import { createClient } from "@libsql/client";
 
-const libsql = createClient({ url: "file:./dev.db" });
-// @ts-expect-error adapter config varies by version
-const adapter = new PrismaLibSql({ client: libsql, url: "file:./dev.db" });
+const url = process.env.TURSO_DATABASE_URL || "file:./dev.db";
+const authToken = process.env.TURSO_AUTH_TOKEN;
+const libsql = createClient({ url, authToken });
+const adapter = new PrismaLibSql({ url, authToken } as Parameters<typeof PrismaLibSql>[0]);
 const prisma = new PrismaClient({ adapter });
 
 const apps = [
