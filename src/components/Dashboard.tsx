@@ -64,7 +64,7 @@ export default function Dashboard() {
     });
   };
 
-  const openApp = (app: App) => {
+  const embedApp = (app: App) => {
     setViewer({ name: app.name, url: app.url });
   };
 
@@ -240,7 +240,7 @@ export default function Dashboard() {
                   app={app}
                   isFavorite={favorites.has(app.id)}
                   onToggleFavorite={toggleFavorite}
-                  onOpen={openApp}
+                  onEmbed={embedApp}
                 />
               ))}
             </div>

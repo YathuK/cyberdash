@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getYouTubeEmbedUrl, getTwitchEmbedUrl } from "@/lib/appConfig";
 
 export default function VideoPlayer({
   onOpenViewer,
@@ -9,58 +10,35 @@ export default function VideoPlayer({
 }) {
   const [url, setUrl] = useState("");
 
-  const getEmbedUrl = (input: string): { name: string; url: string } | null => {
-    try {
-      const u = new URL(input);
-
-      // YouTube
-      if (u.hostname.includes("youtube.com") || u.hostname.includes("youtu.be")) {
-        const videoId = u.hostname.includes("youtu.be")
-          ? u.pathname.slice(1)
-          : u.searchParams.get("v");
-        if (videoId) {
-          return {
-            name: "YouTube",
-            url: `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0&modestbranding=1`,
-          };
-        }
-      }
-
-      // Twitch
-      if (u.hostname.includes("twitch.tv")) {
-        const parts = u.pathname.split("/").filter(Boolean);
-        if (parts[1] === "videos" && parts[2]) {
-          return {
-            name: "Twitch VOD",
-            url: `https://player.twitch.tv/?video=${parts[2]}&parent=${window.location.hostname}&autoplay=true`,
-          };
-        }
-        if (parts[0]) {
-          return {
-            name: `Twitch - ${parts[0]}`,
-            url: `https://player.twitch.tv/?channel=${parts[0]}&parent=${window.location.hostname}&autoplay=true`,
-          };
-        }
-      }
-
-      // Direct video URL — open in a simple page
-      if (/\.(mp4|webm|ogv|ogg)(\?|$)/i.test(input)) {
-        return { name: "Video", url: input };
-      }
-
-      // Any other URL - open as-is
-      return { name: "Video", url: input };
-    } catch {
-      return null;
-    }
-  };
-
   const handlePlay = () => {
-    const result = getEmbedUrl(url.trim());
-    if (result) {
-      onOpenViewer(result.name, result.url);
+    const input = url.trim();
+    if (!input) return;
+
+    // YouTube → use embed URL (works in iframe)
+    const ytEmbed = getYouTubeEmbedUrl(input);
+    if (ytEmbed) {
+      onOpenViewer("YouTube", ytEmbed);
       setUrl("");
+      return;
     }
+
+    // Twitch → use embed player (works in iframe)
+    const twitchEmbed = getTwitchEmbedUrl(input, window.location.hostname);
+    if (twitchEmbed) {
+      onOpenViewer("Twitch", twitchEmbed);
+      setUrl("");
+      return;
+    }
+
+    // Direct video file → open in viewer
+    if (/\.(mp4|webm|ogv|ogg)(\?|$)/i.test(input)) {
+      onOpenViewer("Video", input);
+      setUrl("");
+      return;
+    }
+
+    // Anything else → open directly in browser
+    window.location.href = input;
   };
 
   return (

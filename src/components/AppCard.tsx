@@ -1,6 +1,7 @@
 "use client";
 
 import AppIcon from "./AppIcon";
+import { getOpenMode } from "@/lib/appConfig";
 
 interface App {
   id: string;
@@ -15,13 +16,24 @@ export default function AppCard({
   app,
   isFavorite,
   onToggleFavorite,
-  onOpen,
+  onEmbed,
 }: {
   app: App;
   isFavorite: boolean;
   onToggleFavorite: (appId: string) => void;
-  onOpen: (app: App) => void;
+  onEmbed: (app: App) => void;
 }) {
+  const mode = getOpenMode(app.icon);
+
+  const handleClick = () => {
+    if (mode === "embed") {
+      onEmbed(app);
+    } else {
+      // Navigate directly — leaves CyberDash but works on Tesla in drive mode
+      window.location.href = app.url;
+    }
+  };
+
   return (
     <div
       style={{
@@ -37,9 +49,9 @@ export default function AppCard({
         transform: "translateZ(0)",
         cursor: "pointer",
       }}
-      onClick={() => onOpen(app)}
+      onClick={handleClick}
     >
-      {/* Favorite button - always visible for touch */}
+      {/* Favorite button */}
       <button
         onClick={(e) => {
           e.preventDefault();
@@ -85,6 +97,10 @@ export default function AppCard({
             {app.description}
           </div>
         )}
+        {/* Visual indicator for how app opens */}
+        <div style={{ color: mode === "embed" ? "var(--cyan)" : "#6b7280", fontSize: 10, marginTop: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          {mode === "embed" ? "opens in player" : "opens in browser"}
+        </div>
       </div>
     </div>
   );
