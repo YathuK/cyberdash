@@ -3,6 +3,7 @@
 const iconMap: Record<string, { bg: string; label: string; color: string }> = {
   youtube: { bg: "#FF0000", label: "YT", color: "#fff" },
   netflix: { bg: "#E50914", label: "N", color: "#fff" },
+  prime: { bg: "#00A8E1", label: "AP", color: "#fff" },
   disney: { bg: "#113CCF", label: "D+", color: "#fff" },
   twitch: { bg: "#9146FF", label: "Tw", color: "#fff" },
   plex: { bg: "#E5A00D", label: "Px", color: "#000" },

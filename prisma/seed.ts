@@ -27,12 +27,20 @@ const apps = [
     order: 2,
   },
   {
+    name: "Amazon Prime",
+    url: "https://www.amazon.com/gp/video/storefront",
+    icon: "prime",
+    category: "streaming",
+    description: "Movies, TV shows, and originals",
+    order: 3,
+  },
+  {
     name: "Disney+",
     url: "https://www.disneyplus.com",
     icon: "disney",
     category: "streaming",
     description: "Disney, Pixar, Marvel, Star Wars",
-    order: 3,
+    order: 4,
   },
   {
     name: "Twitch",
@@ -40,7 +48,7 @@ const apps = [
     icon: "twitch",
     category: "streaming",
     description: "Live streaming platform",
-    order: 4,
+    order: 5,
   },
   {
     name: "Plex",
@@ -48,7 +56,7 @@ const apps = [
     icon: "plex",
     category: "streaming",
     description: "Your personal media server",
-    order: 5,
+    order: 6,
   },
   {
     name: "Spotify",
@@ -56,7 +64,7 @@ const apps = [
     icon: "spotify",
     category: "streaming",
     description: "Music and podcasts",
-    order: 6,
+    order: 7,
   },
   // Gaming
   {
@@ -65,7 +73,7 @@ const apps = [
     icon: "xbox",
     category: "gaming",
     description: "Cloud gaming with Xbox Game Pass",
-    order: 7,
+    order: 8,
   },
   {
     name: "GeForce NOW",
@@ -73,7 +81,7 @@ const apps = [
     icon: "nvidia",
     category: "gaming",
     description: "NVIDIA cloud gaming",
-    order: 8,
+    order: 9,
   },
   {
     name: "Luna",
@@ -81,7 +89,7 @@ const apps = [
     icon: "luna",
     category: "gaming",
     description: "Amazon cloud gaming",
-    order: 9,
+    order: 10,
   },
   {
     name: "CrazyGames",
@@ -89,7 +97,7 @@ const apps = [
     icon: "games",
     category: "gaming",
     description: "Free browser games",
-    order: 10,
+    order: 11,
   },
   // Web Apps
   {
@@ -98,7 +106,7 @@ const apps = [
     icon: "maps",
     category: "apps",
     description: "Navigation and maps",
-    order: 11,
+    order: 12,
   },
   {
     name: "Reddit",
@@ -106,7 +114,7 @@ const apps = [
     icon: "reddit",
     category: "apps",
     description: "Community discussions",
-    order: 12,
+    order: 13,
   },
   {
     name: "X / Twitter",
@@ -114,7 +122,7 @@ const apps = [
     icon: "twitter",
     category: "apps",
     description: "Social media feed",
-    order: 13,
+    order: 14,
   },
   {
     name: "Weather",
@@ -122,7 +130,7 @@ const apps = [
     icon: "weather",
     category: "apps",
     description: "Weather forecasts",
-    order: 14,
+    order: 15,
   },
 ];
 
