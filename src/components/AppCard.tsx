@@ -15,10 +15,12 @@ export default function AppCard({
   app,
   isFavorite,
   onToggleFavorite,
+  onOpen,
 }: {
   app: App;
   isFavorite: boolean;
   onToggleFavorite: (appId: string) => void;
+  onOpen: (app: App) => void;
 }) {
   return (
     <div
@@ -33,7 +35,9 @@ export default function AppCard({
         borderRadius: 16,
         position: "relative",
         transform: "translateZ(0)",
+        cursor: "pointer",
       }}
+      onClick={() => onOpen(app)}
     >
       {/* Favorite button - always visible for touch */}
       <button
@@ -73,31 +77,15 @@ export default function AppCard({
         </svg>
       </button>
 
-      <a
-        href={app.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 8,
-          textAlign: "center",
-          textDecoration: "none",
-          color: "inherit",
-          width: "100%",
-        }}
-      >
-        <AppIcon icon={app.icon} size={56} />
-        <div>
-          <div style={{ color: "#fff", fontWeight: 600, fontSize: 14 }}>{app.name}</div>
-          {app.description && (
-            <div style={{ color: "#9ca3af", fontSize: 12, marginTop: 4 }}>
-              {app.description}
-            </div>
-          )}
-        </div>
-      </a>
+      <AppIcon icon={app.icon} size={56} />
+      <div style={{ textAlign: "center" }}>
+        <div style={{ color: "#fff", fontWeight: 600, fontSize: 14 }}>{app.name}</div>
+        {app.description && (
+          <div style={{ color: "#9ca3af", fontSize: 12, marginTop: 4 }}>
+            {app.description}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
