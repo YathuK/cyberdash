@@ -17,22 +17,30 @@ export default function AppCard({
   isFavorite,
   onToggleFavorite,
   onEmbed,
+  onYouTube,
 }: {
   app: App;
   isFavorite: boolean;
   onToggleFavorite: (appId: string) => void;
   onEmbed: (app: App) => void;
+  onYouTube?: () => void;
 }) {
   const mode = getOpenMode(app.icon);
 
   const handleClick = () => {
-    if (mode === "embed") {
+    if (mode === "canvas" && onYouTube) {
+      onYouTube();
+    } else if (mode === "embed") {
       onEmbed(app);
     } else {
-      // Navigate directly — leaves CyberDash but works on Tesla in drive mode
       window.location.href = app.url;
     }
   };
+
+  const modeLabel =
+    mode === "canvas" ? "canvas player" :
+    mode === "embed" ? "opens in player" :
+    "opens in browser";
 
   return (
     <div
@@ -43,7 +51,7 @@ export default function AppCard({
         gap: 8,
         padding: 16,
         background: "rgba(17, 24, 39, 0.7)",
-        border: "1px solid var(--cyan-border)",
+        border: mode === "canvas" ? "1px solid rgba(34,211,238,0.4)" : "1px solid var(--cyan-border)",
         borderRadius: 16,
         position: "relative",
         transform: "translateZ(0)",
@@ -97,9 +105,15 @@ export default function AppCard({
             {app.description}
           </div>
         )}
-        {/* Visual indicator for how app opens */}
-        <div style={{ color: mode === "embed" ? "var(--cyan)" : "#6b7280", fontSize: 10, marginTop: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-          {mode === "embed" ? "opens in player" : "opens in browser"}
+        <div style={{
+          color: mode === "canvas" ? "var(--cyan)" : "#6b7280",
+          fontSize: 10,
+          marginTop: 6,
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          fontWeight: mode === "canvas" ? 600 : 400,
+        }}>
+          {modeLabel}
         </div>
       </div>
     </div>

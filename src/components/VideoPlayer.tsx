@@ -1,31 +1,45 @@
 "use client";
 
 import { useState } from "react";
-import { getYouTubeEmbedUrl, getTwitchEmbedUrl } from "@/lib/appConfig";
+
+function extractYouTubeId(input: string): string | null {
+  try {
+    const u = new URL(input);
+    if (u.hostname.includes("youtu.be")) return u.pathname.slice(1).split("/")[0];
+    if (u.hostname.includes("youtube.com")) return u.searchParams.get("v");
+  } catch {
+    // not a URL
+  }
+  return null;
+}
 
 export default function VideoPlayer({
+  onPlayYouTube,
   onOpenViewer,
 }: {
+  onPlayYouTube: (videoId: string, title: string) => void;
   onOpenViewer: (name: string, url: string) => void;
 }) {
   const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handlePlay = () => {
+  const handlePlay = async () => {
     const input = url.trim();
     if (!input) return;
 
-    // YouTube → use embed URL (works in iframe)
-    const ytEmbed = getYouTubeEmbedUrl(input);
-    if (ytEmbed) {
-      onOpenViewer("YouTube", ytEmbed);
-      setUrl("");
-      return;
-    }
-
-    // Twitch → use embed player (works in iframe)
-    const twitchEmbed = getTwitchEmbedUrl(input, window.location.hostname);
-    if (twitchEmbed) {
-      onOpenViewer("Twitch", twitchEmbed);
+    // YouTube → use canvas player (works while driving)
+    const videoId = extractYouTubeId(input);
+    if (videoId) {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/youtube/info?v=${videoId}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        onPlayYouTube(videoId, data.title || "YouTube Video");
+      } catch {
+        onPlayYouTube(videoId, "YouTube Video");
+      }
+      setLoading(false);
       setUrl("");
       return;
     }
@@ -48,7 +62,7 @@ export default function VideoPlayer({
         value={url}
         onChange={(e) => setUrl(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && handlePlay()}
-        placeholder="Paste YouTube or video URL..."
+        placeholder="Paste YouTube URL to play while driving..."
         style={{
           flex: 1,
           background: "rgba(31,41,55,0.6)",
@@ -64,22 +78,22 @@ export default function VideoPlayer({
       />
       <button
         onClick={handlePlay}
-        disabled={!url.trim()}
+        disabled={!url.trim() || loading}
         style={{
           padding: "10px 20px",
-          background: url.trim() ? "var(--cyan-dim)" : "rgba(31,41,55,0.4)",
-          color: url.trim() ? "var(--cyan)" : "#4b5563",
-          border: url.trim() ? "1px solid var(--cyan-border)" : "1px solid rgba(75,85,99,0.3)",
+          background: url.trim() && !loading ? "var(--cyan-dim)" : "rgba(31,41,55,0.4)",
+          color: url.trim() && !loading ? "var(--cyan)" : "#4b5563",
+          border: url.trim() && !loading ? "1px solid var(--cyan-border)" : "1px solid rgba(75,85,99,0.3)",
           borderRadius: 12,
           fontSize: 14,
           fontWeight: 600,
-          cursor: url.trim() ? "pointer" : "default",
+          cursor: url.trim() && !loading ? "pointer" : "default",
           minHeight: 44,
           minWidth: 72,
           whiteSpace: "nowrap",
         }}
       >
-        ▶ Play
+        {loading ? "..." : "▶ Play"}
       </button>
     </div>
   );

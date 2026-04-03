@@ -5,6 +5,8 @@ import AppCard from "./AppCard";
 import CategoryNav from "./CategoryNav";
 import VideoPlayer from "./VideoPlayer";
 import AppViewer from "./AppViewer";
+import CanvasPlayer from "./CanvasPlayer";
+import YouTubeBrowser from "./YouTubeBrowser";
 import { getSessionId } from "@/lib/session";
 
 interface App {
@@ -16,10 +18,10 @@ interface App {
   description: string | null;
 }
 
-interface ViewerState {
-  name: string;
-  url: string;
-}
+type ViewerState =
+  | { type: "iframe"; name: string; url: string }
+  | { type: "youtube"; videoId: string; title: string }
+  | { type: "youtube-browse" };
 
 export default function Dashboard() {
   const [apps, setApps] = useState<App[]>([]);
@@ -65,11 +67,15 @@ export default function Dashboard() {
   };
 
   const embedApp = (app: App) => {
-    setViewer({ name: app.name, url: app.url });
+    setViewer({ type: "iframe", name: app.name, url: app.url });
+  };
+
+  const playYouTube = (videoId: string, title: string) => {
+    setViewer({ type: "youtube", videoId, title });
   };
 
   const openViewer = (name: string, url: string) => {
-    setViewer({ name, url });
+    setViewer({ type: "iframe", name, url });
   };
 
   const filtered = apps.filter((app) => {
@@ -81,11 +87,24 @@ export default function Dashboard() {
 
   return (
     <>
-      {/* Fullscreen app/video viewer overlay */}
-      {viewer && (
+      {/* Viewer overlays */}
+      {viewer?.type === "iframe" && (
         <AppViewer
           name={viewer.name}
           url={viewer.url}
+          onClose={() => setViewer(null)}
+        />
+      )}
+      {viewer?.type === "youtube" && (
+        <CanvasPlayer
+          videoId={viewer.videoId}
+          title={viewer.title}
+          onClose={() => setViewer(null)}
+        />
+      )}
+      {viewer?.type === "youtube-browse" && (
+        <YouTubeBrowser
+          onPlay={(videoId, title) => setViewer({ type: "youtube", videoId, title })}
           onClose={() => setViewer(null)}
         />
       )}
@@ -151,7 +170,7 @@ export default function Dashboard() {
 
             {/* Search + Video Player */}
             <div style={{ display: "flex", alignItems: "center", gap: 16, flex: 1, maxWidth: 700, marginLeft: 32 }}>
-              <div style={{ position: "relative", width: 220, flexShrink: 0 }}>
+              <div style={{ position: "relative", width: 200, flexShrink: 0 }}>
                 <svg
                   style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, color: "#6b7280" }}
                   fill="none"
@@ -165,7 +184,7 @@ export default function Dashboard() {
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search apps..."
+                  placeholder="Search..."
                   style={{
                     width: "100%",
                     background: "rgba(31,41,55,0.5)",
@@ -185,7 +204,7 @@ export default function Dashboard() {
               </div>
 
               <div style={{ flex: 1 }}>
-                <VideoPlayer onOpenViewer={openViewer} />
+                <VideoPlayer onPlayYouTube={playYouTube} onOpenViewer={openViewer} />
               </div>
             </div>
           </div>
@@ -241,6 +260,7 @@ export default function Dashboard() {
                   isFavorite={favorites.has(app.id)}
                   onToggleFavorite={toggleFavorite}
                   onEmbed={embedApp}
+                  onYouTube={() => setViewer({ type: "youtube-browse" })}
                 />
               ))}
             </div>
