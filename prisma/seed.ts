@@ -1,0 +1,147 @@
+import { PrismaClient } from "../src/generated/prisma/client.js";
+import { PrismaLibSql } from "@prisma/adapter-libsql";
+import { createClient } from "@libsql/client";
+
+const libsql = createClient({ url: "file:./dev.db" });
+// @ts-expect-error adapter config varies by version
+const adapter = new PrismaLibSql({ client: libsql, url: "file:./dev.db" });
+const prisma = new PrismaClient({ adapter });
+
+const apps = [
+  // Streaming
+  {
+    name: "YouTube",
+    url: "https://www.youtube.com",
+    icon: "youtube",
+    category: "streaming",
+    description: "Watch videos, live streams, and music",
+    order: 1,
+  },
+  {
+    name: "Netflix",
+    url: "https://www.netflix.com",
+    icon: "netflix",
+    category: "streaming",
+    description: "Stream movies and TV shows",
+    order: 2,
+  },
+  {
+    name: "Disney+",
+    url: "https://www.disneyplus.com",
+    icon: "disney",
+    category: "streaming",
+    description: "Disney, Pixar, Marvel, Star Wars",
+    order: 3,
+  },
+  {
+    name: "Twitch",
+    url: "https://www.twitch.tv",
+    icon: "twitch",
+    category: "streaming",
+    description: "Live streaming platform",
+    order: 4,
+  },
+  {
+    name: "Plex",
+    url: "https://app.plex.tv",
+    icon: "plex",
+    category: "streaming",
+    description: "Your personal media server",
+    order: 5,
+  },
+  {
+    name: "Spotify",
+    url: "https://open.spotify.com",
+    icon: "spotify",
+    category: "streaming",
+    description: "Music and podcasts",
+    order: 6,
+  },
+  // Gaming
+  {
+    name: "Xbox Cloud",
+    url: "https://www.xbox.com/play",
+    icon: "xbox",
+    category: "gaming",
+    description: "Cloud gaming with Xbox Game Pass",
+    order: 7,
+  },
+  {
+    name: "GeForce NOW",
+    url: "https://play.geforcenow.com",
+    icon: "nvidia",
+    category: "gaming",
+    description: "NVIDIA cloud gaming",
+    order: 8,
+  },
+  {
+    name: "Luna",
+    url: "https://luna.amazon.com",
+    icon: "luna",
+    category: "gaming",
+    description: "Amazon cloud gaming",
+    order: 9,
+  },
+  {
+    name: "CrazyGames",
+    url: "https://www.crazygames.com",
+    icon: "games",
+    category: "gaming",
+    description: "Free browser games",
+    order: 10,
+  },
+  // Web Apps
+  {
+    name: "Google Maps",
+    url: "https://www.google.com/maps",
+    icon: "maps",
+    category: "apps",
+    description: "Navigation and maps",
+    order: 11,
+  },
+  {
+    name: "Reddit",
+    url: "https://www.reddit.com",
+    icon: "reddit",
+    category: "apps",
+    description: "Community discussions",
+    order: 12,
+  },
+  {
+    name: "X / Twitter",
+    url: "https://x.com",
+    icon: "twitter",
+    category: "apps",
+    description: "Social media feed",
+    order: 13,
+  },
+  {
+    name: "Weather",
+    url: "https://weather.com",
+    icon: "weather",
+    category: "apps",
+    description: "Weather forecasts",
+    order: 14,
+  },
+];
+
+async function main() {
+  console.log("Seeding database...");
+
+  await prisma.app.deleteMany();
+
+  for (const app of apps) {
+    await prisma.app.create({ data: app });
+  }
+
+  console.log(`Seeded ${apps.length} apps`);
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

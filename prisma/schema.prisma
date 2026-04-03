@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model App {
+  id          String     @id @default(cuid())
+  name        String
+  url         String
+  icon        String
+  category    String
+  description String?
+  order       Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  favorites   Favorite[]
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  appId     String
+  app       App      @relation(fields: [appId], references: [id], onDelete: Cascade)
+  sessionId String
+  createdAt DateTime @default(now())
+
+  @@unique([appId, sessionId])
+}
+
+model VideoBookmark {
+  id        String   @id @default(cuid())
+  title     String
+  url       String
+  thumbnail String?
+  sessionId String
+  createdAt DateTime @default(now())
+}

@@ -4,12 +4,19 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "postinstall": "prisma generate",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.2",
+    "@prisma/adapter-libsql": "^7.6.0",
+    "@prisma/client": "^7.6.0",
+    "dotenv": "^17.4.0",
     "next": "16.2.2",
+    "ogv": "^1.9.0",
+    "prisma": "^7.6.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
