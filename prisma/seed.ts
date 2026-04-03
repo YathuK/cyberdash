@@ -58,14 +58,6 @@ const apps = [
     description: "Your personal media server",
     order: 6,
   },
-  {
-    name: "Spotify",
-    url: "https://open.spotify.com",
-    icon: "spotify",
-    category: "streaming",
-    description: "Music and podcasts",
-    order: 7,
-  },
   // Gaming
   {
     name: "Xbox Cloud",
@@ -73,7 +65,7 @@ const apps = [
     icon: "xbox",
     category: "gaming",
     description: "Cloud gaming with Xbox Game Pass",
-    order: 8,
+    order: 7,
   },
   {
     name: "GeForce NOW",
@@ -81,7 +73,7 @@ const apps = [
     icon: "nvidia",
     category: "gaming",
     description: "NVIDIA cloud gaming",
-    order: 9,
+    order: 8,
   },
   {
     name: "Luna",
@@ -89,7 +81,7 @@ const apps = [
     icon: "luna",
     category: "gaming",
     description: "Amazon cloud gaming",
-    order: 10,
+    order: 9,
   },
   {
     name: "CrazyGames",
@@ -97,40 +89,7 @@ const apps = [
     icon: "games",
     category: "gaming",
     description: "Free browser games",
-    order: 11,
-  },
-  // Web Apps
-  {
-    name: "Google Maps",
-    url: "https://www.google.com/maps",
-    icon: "maps",
-    category: "apps",
-    description: "Navigation and maps",
-    order: 12,
-  },
-  {
-    name: "Reddit",
-    url: "https://www.reddit.com",
-    icon: "reddit",
-    category: "apps",
-    description: "Community discussions",
-    order: 13,
-  },
-  {
-    name: "X / Twitter",
-    url: "https://x.com",
-    icon: "twitter",
-    category: "apps",
-    description: "Social media feed",
-    order: 14,
-  },
-  {
-    name: "Weather",
-    url: "https://weather.com",
-    icon: "weather",
-    category: "apps",
-    description: "Weather forecasts",
-    order: 15,
+    order: 10,
   },
 ];
 

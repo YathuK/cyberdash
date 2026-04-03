@@ -4,7 +4,6 @@ const categories = [
   { id: "all", label: "All" },
   { id: "streaming", label: "Streaming" },
   { id: "gaming", label: "Gaming" },
-  { id: "apps", label: "Apps" },
   { id: "favorites", label: "Favorites" },
 ];
 
