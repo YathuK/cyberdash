@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import AppCard from "./AppCard";
-import CategoryNav from "./CategoryNav";
+import AppIcon from "./AppIcon";
 import VideoPlayer from "./VideoPlayer";
 import AppViewer from "./AppViewer";
 import CanvasPlayer from "./CanvasPlayer";
 import YouTubeBrowser from "./YouTubeBrowser";
 import { getSessionId } from "@/lib/session";
+import { getOpenMode } from "@/lib/appConfig";
 
 interface App {
   id: string;
@@ -26,8 +26,6 @@ type ViewerState =
 export default function Dashboard() {
   const [apps, setApps] = useState<App[]>([]);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  const [category, setCategory] = useState("all");
-  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [viewer, setViewer] = useState<ViewerState | null>(null);
 
@@ -66,8 +64,15 @@ export default function Dashboard() {
     });
   };
 
-  const embedApp = (app: App) => {
-    setViewer({ type: "iframe", name: app.name, url: app.url });
+  const handleAppClick = (app: App) => {
+    const mode = getOpenMode(app.icon);
+    if (mode === "canvas") {
+      setViewer({ type: "youtube-browse" });
+    } else if (mode === "embed") {
+      setViewer({ type: "iframe", name: app.name, url: app.url });
+    } else {
+      window.location.href = app.url;
+    }
   };
 
   const playYouTube = (videoId: string, title: string) => {
@@ -78,29 +83,16 @@ export default function Dashboard() {
     setViewer({ type: "iframe", name, url });
   };
 
-  const filtered = apps.filter((app) => {
-    if (category === "favorites") return favorites.has(app.id);
-    if (category !== "all" && app.category !== category) return false;
-    if (search && !app.name.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  const otherApps = apps.filter((a) => a.icon !== "youtube");
 
   return (
     <>
-      {/* Viewer overlays */}
+      {/* Overlays */}
       {viewer?.type === "iframe" && (
-        <AppViewer
-          name={viewer.name}
-          url={viewer.url}
-          onClose={() => setViewer(null)}
-        />
+        <AppViewer name={viewer.name} url={viewer.url} onClose={() => setViewer(null)} />
       )}
       {viewer?.type === "youtube" && (
-        <CanvasPlayer
-          videoId={viewer.videoId}
-          title={viewer.title}
-          onClose={() => setViewer(null)}
-        />
+        <CanvasPlayer videoId={viewer.videoId} title={viewer.title} onClose={() => setViewer(null)} />
       )}
       {viewer?.type === "youtube-browse" && (
         <YouTubeBrowser
@@ -116,153 +108,222 @@ export default function Dashboard() {
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",
-          background: "linear-gradient(135deg, #030712 0%, #0f172a 50%, #030712 100%)",
+          background: "radial-gradient(ellipse at 50% 30%, rgba(34,211,238,0.04) 0%, #030712 60%)",
           position: "relative",
         }}
       >
-        {/* Cyber grid overlay */}
+        {/* Animated grid + scan line */}
         <div
-          className="cyber-grid"
-          style={{
-            position: "fixed",
-            inset: 0,
-            opacity: 0.4,
-            pointerEvents: "none",
-            zIndex: 0,
-          }}
+          className="cyber-grid scan-line"
+          style={{ position: "fixed", inset: 0, opacity: 0.5, pointerEvents: "none", zIndex: 0 }}
         />
 
-        {/* Header */}
+        {/* Header bar */}
         <header
           style={{
             position: "relative",
             zIndex: 10,
-            padding: "16px 24px 12px",
+            padding: "12px 24px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
             flexShrink: 0,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-            {/* Logo */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-              <div
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 12,
-                  background: "var(--cyan-dim)",
-                  border: "1px solid var(--cyan-border)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <span style={{ color: "var(--cyan)", fontWeight: 700, fontSize: 20 }}>C</span>
-              </div>
-              <div>
-                <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }}>
-                  Cyber<span style={{ color: "var(--cyan)" }}>Dash</span>
-                </h1>
-                <p style={{ margin: 0, fontSize: 11, color: "#6b7280", letterSpacing: "0.15em", textTransform: "uppercase" }}>
-                  Drive. Watch. Explore.
-                </p>
-              </div>
+          <div className="float" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 10,
+                background: "var(--cyan-dim)",
+                border: "1px solid var(--cyan-border)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <span style={{ color: "var(--cyan)", fontWeight: 700, fontSize: 18 }}>C</span>
             </div>
-
-            {/* Search + Video Player */}
-            <div style={{ display: "flex", alignItems: "center", gap: 16, flex: 1, maxWidth: 700, marginLeft: 32 }}>
-              <div style={{ position: "relative", width: 200, flexShrink: 0 }}>
-                <svg
-                  style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, color: "#6b7280" }}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search..."
-                  style={{
-                    width: "100%",
-                    background: "rgba(31,41,55,0.5)",
-                    border: "1px solid rgba(75,85,99,0.4)",
-                    borderRadius: 12,
-                    paddingLeft: 36,
-                    paddingRight: 12,
-                    paddingTop: 10,
-                    paddingBottom: 10,
-                    fontSize: 14,
-                    color: "#fff",
-                    outline: "none",
-                    minHeight: 44,
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-
-              <div style={{ flex: 1 }}>
-                <VideoPlayer onPlayYouTube={playYouTube} onOpenViewer={openViewer} />
-              </div>
+            <div>
+              <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#fff" }}>
+                Cyber<span className="gradient-text">Dash</span>
+              </h1>
+              <p style={{ margin: 0, fontSize: 10, color: "#6b7280", letterSpacing: "0.15em", textTransform: "uppercase" }}>
+                Drive. Watch. Explore.
+              </p>
             </div>
           </div>
 
-          <CategoryNav active={category} onChange={setCategory} />
+          {/* URL player bar */}
+          <div style={{ flex: 1, maxWidth: 500, marginLeft: 24 }}>
+            <VideoPlayer onPlayYouTube={playYouTube} onOpenViewer={openViewer} />
+          </div>
         </header>
 
-        {/* App Grid */}
+        {/* Main content area */}
         <main
-          className="scroll-area"
           style={{
             flex: 1,
             position: "relative",
             zIndex: 10,
-            padding: "8px 24px 16px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0 24px 16px",
             minHeight: 0,
           }}
         >
           {loading ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 16 }}>
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div
-                  key={i}
-                  style={{
-                    background: "rgba(17,24,39,0.4)",
-                    border: "1px solid rgba(75,85,99,0.2)",
-                    borderRadius: 16,
-                    height: 140,
-                  }}
-                />
-              ))}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "60px 0" }}>
-              <p style={{ color: "#6b7280", fontSize: 16 }}>
-                {category === "favorites"
-                  ? "No favorites yet. Tap the star on any app."
-                  : "No apps found."}
-              </p>
-            </div>
+            <div style={{ color: "var(--cyan)", fontSize: 16 }}>Loading...</div>
           ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
-                gap: 16,
-              }}
-            >
-              {filtered.map((app) => (
-                <AppCard
-                  key={app.id}
-                  app={app}
-                  isFavorite={favorites.has(app.id)}
-                  onToggleFavorite={toggleFavorite}
-                  onEmbed={embedApp}
-                  onYouTube={() => setViewer({ type: "youtube-browse" })}
-                />
-              ))}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 28, width: "100%", maxWidth: 1200 }}>
+
+              {/* ===== YOUTUBE HERO CARD ===== */}
+              <div
+                className="hero-glow animate-slide-up press-effect"
+                onClick={() => setViewer({ type: "youtube-browse" })}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 24,
+                  padding: "24px 32px",
+                  background: "linear-gradient(135deg, rgba(255,0,0,0.12) 0%, rgba(17,24,39,0.8) 50%, rgba(255,0,0,0.08) 100%)",
+                  border: "1px solid rgba(255,0,0,0.3)",
+                  borderRadius: 24,
+                  cursor: "pointer",
+                  width: "100%",
+                  maxWidth: 600,
+                  position: "relative",
+                  overflow: "hidden",
+                  transform: "translateZ(0)",
+                }}
+              >
+                {/* Decorative corner accents */}
+                <div style={{
+                  position: "absolute", top: 0, left: 0, width: 40, height: 40,
+                  borderTop: "2px solid rgba(255,0,0,0.5)", borderLeft: "2px solid rgba(255,0,0,0.5)",
+                  borderRadius: "24px 0 0 0",
+                }} />
+                <div style={{
+                  position: "absolute", bottom: 0, right: 0, width: 40, height: 40,
+                  borderBottom: "2px solid rgba(255,0,0,0.5)", borderRight: "2px solid rgba(255,0,0,0.5)",
+                  borderRadius: "0 0 24px 0",
+                }} />
+
+                {/* YouTube icon */}
+                <div
+                  style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: 18,
+                    background: "#FF0000",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <svg width={36} height={36} viewBox="0 0 24 24" fill="#fff">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
+
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: "#fff", marginBottom: 4 }}>
+                    YouTube
+                  </div>
+                  <div style={{ fontSize: 14, color: "#d1d5db" }}>
+                    Search, browse & watch — renders to canvas
+                  </div>
+                  <div style={{
+                    display: "inline-block",
+                    marginTop: 8,
+                    padding: "4px 12px",
+                    background: "rgba(255,0,0,0.15)",
+                    border: "1px solid rgba(255,0,0,0.3)",
+                    borderRadius: 999,
+                    color: "#f87171",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.1em",
+                  }}>
+                    Works while driving
+                  </div>
+                </div>
+
+                {/* Arrow */}
+                <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth={2}>
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+              </div>
+
+              {/* ===== OTHER APPS GRID ===== */}
+              <div style={{ width: "100%", textAlign: "center" }}>
+                <div style={{ color: "#4b5563", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: 12 }}>
+                  Other apps — available when parked
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    justifyContent: "center",
+                    gap: 12,
+                  }}
+                >
+                  {otherApps.map((app, i) => (
+                    <div
+                      key={app.id}
+                      className={`animate-slide-up delay-${Math.min(i + 1, 9)} shimmer-border press-effect`}
+                      onClick={() => handleAppClick(app)}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "14px 12px",
+                        background: "rgba(17, 24, 39, 0.6)",
+                        border: "1px solid var(--cyan-border)",
+                        borderRadius: 14,
+                        cursor: "pointer",
+                        width: 110,
+                        position: "relative",
+                        transform: "translateZ(0)",
+                      }}
+                    >
+                      {/* Favorite star */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleFavorite(app.id);
+                        }}
+                        style={{
+                          position: "absolute", top: 4, right: 4,
+                          width: 28, height: 28, minHeight: 28, minWidth: 28,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          background: "transparent", border: "none", cursor: "pointer", padding: 0,
+                        }}
+                      >
+                        <svg width={14} height={14} viewBox="0 0 24 24"
+                          stroke={favorites.has(app.id) ? "var(--cyan)" : "#4b5563"}
+                          strokeWidth={2}
+                          fill={favorites.has(app.id) ? "var(--cyan)" : "none"}
+                        >
+                          <path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                        </svg>
+                      </button>
+
+                      <AppIcon icon={app.icon} size={44} />
+                      <div style={{ color: "#e5e7eb", fontWeight: 600, fontSize: 12 }}>{app.name}</div>
+                      <div style={{ color: "#6b7280", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        {getOpenMode(app.icon) === "embed" ? "in player" : "browser"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </main>
