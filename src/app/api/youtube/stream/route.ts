@@ -1,67 +1,85 @@
 import { NextRequest } from "next/server";
-import ytdl from "@distube/ytdl-core";
+import { Innertube } from "youtubei.js";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function GET(request: NextRequest) {
   const videoId = request.nextUrl.searchParams.get("v");
-  const itag = request.nextUrl.searchParams.get("itag");
+  const requestedItag = request.nextUrl.searchParams.get("itag");
 
   if (!videoId) {
     return new Response("Missing video ID", { status: 400 });
   }
 
   try {
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
-    const info = await ytdl.getInfo(url);
+    const yt = await Innertube.create({ generate_session_locally: true });
+    const info = await yt.getBasicInfo(videoId);
+
+    const streamingData = info.streaming_data;
+    if (!streamingData) {
+      return new Response("No streaming data", { status: 404 });
+    }
+
+    // Find the best combined (video+audio) format
+    const allFormats = [
+      ...(streamingData.formats || []),
+      ...(streamingData.adaptive_formats || []),
+    ];
 
     let format;
 
-    if (itag) {
-      format = info.formats.find((f) => f.itag === parseInt(itag));
+    if (requestedItag) {
+      format = allFormats.find((f) => f.itag === parseInt(requestedItag));
     }
 
     if (!format) {
-      // Try combined (video+audio) first, prefer 720p or lower
-      format = info.formats
-        .filter((f) => f.hasVideo && f.hasAudio)
+      // Prefer combined formats (has both video and audio)
+      format = (streamingData.formats || [])
+        .filter((f) => f.has_video && f.has_audio)
         .sort((a, b) => {
           const aH = a.height || 0;
           const bH = b.height || 0;
-          // Prefer highest quality that's <= 720p
           if (aH <= 720 && bH <= 720) return bH - aH;
           if (aH <= 720) return -1;
           if (bH <= 720) return 1;
-          return aH - bH; // If both > 720, pick lowest
+          return aH - bH;
         })[0];
     }
 
     if (!format) {
-      // Fallback: any format with video+audio
-      format = info.formats.find((f) => f.hasVideo && f.hasAudio);
+      // Fallback to any format with video
+      format = allFormats.find((f) => f.has_video && f.has_audio);
     }
 
     if (!format) {
-      // Last resort: any format with video
-      format = info.formats.find((f) => f.hasVideo);
+      format = allFormats.find((f) => f.has_video);
     }
 
-    if (!format || !format.url) {
+    if (!format) {
       return new Response("No playable format found", { status: 404 });
     }
 
-    // Proxy the video stream
+    // Get the stream URL - youtubei.js decipher method
+    const streamUrl = await format.decipher(yt.session.player);
+
+    if (!streamUrl) {
+      return new Response("Could not decipher stream URL", { status: 500 });
+    }
+
+    // Proxy the stream
     const rangeHeader = request.headers.get("range");
-    const fetchHeaders: Record<string, string> = {};
+    const fetchHeaders: Record<string, string> = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0",
+    };
     if (rangeHeader) {
       fetchHeaders["Range"] = rangeHeader;
     }
 
-    const videoResponse = await fetch(format.url, { headers: fetchHeaders });
+    const videoResponse = await fetch(streamUrl, { headers: fetchHeaders });
 
     const responseHeaders = new Headers();
-    responseHeaders.set("Content-Type", format.mimeType?.split(";")[0] || "video/mp4");
+    responseHeaders.set("Content-Type", format.mime_type?.split(";")[0] || "video/mp4");
     responseHeaders.set("Access-Control-Allow-Origin", "*");
     responseHeaders.set("Accept-Ranges", "bytes");
     responseHeaders.set("Cache-Control", "public, max-age=3600");
@@ -78,6 +96,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("YouTube stream error:", error);
-    return new Response(`Stream failed: ${error instanceof Error ? error.message : error}`, { status: 500 });
+    return new Response(
+      `Stream failed: ${error instanceof Error ? error.message : error}`,
+      { status: 500 }
+    );
   }
 }

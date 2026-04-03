@@ -19,7 +19,8 @@
     "ogv": "^1.9.0",
     "prisma": "^7.6.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "youtubei.js": "^17.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import ytdl from "@distube/ytdl-core";
+import { Innertube } from "youtubei.js";
 
 export async function GET(request: NextRequest) {
   const videoId = request.nextUrl.searchParams.get("v");
@@ -9,28 +9,43 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const url = `https://www.youtube.com/watch?v=${videoId}`;
-    const info = await ytdl.getInfo(url);
+    const yt = await Innertube.create({ generate_session_locally: true });
+    const info = await yt.getBasicInfo(videoId);
 
-    // Get all available formats
-    const formats = info.formats
-      .filter((f) => f.hasVideo)
+    const title = info.basic_info.title || "YouTube Video";
+    const author = info.basic_info.author || "Unknown";
+    const duration = info.basic_info.duration || 0;
+    const thumbnail = info.basic_info.thumbnail?.[0]?.url;
+
+    // Get streaming formats
+    const formats = (info.streaming_data?.formats || []).map((f) => ({
+      itag: f.itag,
+      mimeType: f.mime_type,
+      quality: f.quality_label,
+      width: f.width,
+      height: f.height,
+      hasAudio: !!f.has_audio,
+      bitrate: f.bitrate,
+    }));
+
+    const adaptiveFormats = (info.streaming_data?.adaptive_formats || [])
+      .filter((f) => f.has_video)
       .map((f) => ({
         itag: f.itag,
-        mimeType: f.mimeType,
-        quality: f.qualityLabel,
+        mimeType: f.mime_type,
+        quality: f.quality_label,
         width: f.width,
         height: f.height,
-        hasAudio: f.hasAudio,
-        container: f.container,
+        hasAudio: !!f.has_audio,
+        bitrate: f.bitrate,
       }));
 
     return Response.json({
-      title: info.videoDetails.title,
-      author: info.videoDetails.author.name,
-      lengthSeconds: info.videoDetails.lengthSeconds,
-      thumbnail: info.videoDetails.thumbnails.pop()?.url,
-      formats,
+      title,
+      author,
+      lengthSeconds: duration,
+      thumbnail,
+      formats: [...formats, ...adaptiveFormats],
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
