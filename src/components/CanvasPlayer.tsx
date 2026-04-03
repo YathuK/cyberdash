@@ -235,7 +235,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
               Loading video...
             </div>
             <div style={{ color: "#6b7280", fontSize: 13 }}>
-              Streaming through CyberDash proxy
+              Preparing your video...
             </div>
           </div>
         )}

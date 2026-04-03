@@ -170,7 +170,7 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
               Search for any video or paste a YouTube URL
             </p>
             <p style={{ color: "#4b5563", fontSize: 13 }}>
-              Videos play on canvas — works while driving
+              Works while driving
             </p>
           </div>
         )}
