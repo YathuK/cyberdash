@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { Innertube } from "youtubei.js";
+import { getInnertube } from "@/lib/youtube";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const yt = await Innertube.create({ generate_session_locally: true });
+    const yt = await getInnertube();
     const info = await yt.getBasicInfo(videoId);
 
     const streamingData = info.streaming_data;
