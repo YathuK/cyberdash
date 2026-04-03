@@ -42,9 +42,10 @@ export async function GET(request: NextRequest) {
       formats,
     });
   } catch (error) {
-    console.error("YouTube info error:", error);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("YouTube info error:", msg);
     return Response.json(
-      { error: "Failed to get video info" },
+      { error: "Failed to get video info", details: msg },
       { status: 500 }
     );
   }
