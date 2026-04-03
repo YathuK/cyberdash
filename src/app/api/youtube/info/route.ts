@@ -12,27 +12,18 @@ export async function GET(request: NextRequest) {
     const url = `https://www.youtube.com/watch?v=${videoId}`;
     const info = await ytdl.getInfo(url);
 
-    // Get formats that work for canvas playback
-    // Prefer WebM (for OGV.js) and MP4 (for fallback)
+    // Get all available formats
     const formats = info.formats
-      .filter((f) => f.hasVideo && f.hasAudio)
+      .filter((f) => f.hasVideo)
       .map((f) => ({
         itag: f.itag,
         mimeType: f.mimeType,
         quality: f.qualityLabel,
         width: f.width,
         height: f.height,
-        contentLength: f.contentLength,
+        hasAudio: f.hasAudio,
         container: f.container,
-      }))
-      .sort((a, b) => {
-        // Prefer 720p or lower for Tesla browser performance
-        const aHeight = a.height || 0;
-        const bHeight = b.height || 0;
-        const aScore = aHeight <= 720 ? aHeight : -(aHeight);
-        const bScore = bHeight <= 720 ? bHeight : -(bHeight);
-        return bScore - aScore;
-      });
+      }));
 
     return Response.json({
       title: info.videoDetails.title,
