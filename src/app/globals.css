@@ -3,6 +3,9 @@
 :root {
   --background: #030712;
   --foreground: #e5e7eb;
+  --cyan: #22d3ee;
+  --cyan-dim: rgba(34, 211, 238, 0.15);
+  --cyan-border: rgba(34, 211, 238, 0.25);
 }
 
 @theme inline {
@@ -12,13 +15,57 @@
   --font-mono: var(--font-geist-mono);
 }
 
-body {
+/* Tesla-optimized base */
+*, *::before, *::after {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Hide scrollbar for category nav */
+/* Re-enable selection on inputs */
+input, textarea {
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+/* Touch-friendly interactive elements */
+button, a, [role="button"] {
+  touch-action: manipulation;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Scrollbar for app grid - thin and dark */
+.scroll-area {
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34, 211, 238, 0.2) transparent;
+}
+.scroll-area::-webkit-scrollbar {
+  width: 4px;
+}
+.scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-area::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.2);
+  border-radius: 2px;
+}
+
+/* Hide scrollbar utility */
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -27,12 +74,36 @@ body {
   display: none;
 }
 
-/* Glow animation for header */
-@keyframes glow-pulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
+/* GPU-accelerated grid background */
+.cyber-grid {
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.06) 1px, transparent 1px);
+  background-size: 60px 60px;
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
 }
 
-.glow-pulse {
-  animation: glow-pulse 3s ease-in-out infinite;
+/* Aspect ratio fallback for older Chromium */
+.video-wrapper {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%; /* 16:9 */
+}
+.video-wrapper > * {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+@supports (aspect-ratio: 16 / 9) {
+  .video-wrapper {
+    padding-top: 0;
+    aspect-ratio: 16 / 9;
+  }
+  .video-wrapper > * {
+    position: static;
+  }
 }

@@ -17,18 +17,24 @@ const iconMap: Record<string, { bg: string; label: string; color: string }> = {
   weather: { bg: "#00BFFF", label: "Wx", color: "#fff" },
 };
 
-export default function AppIcon({ icon, size = 48 }: { icon: string; size?: number }) {
+export default function AppIcon({ icon, size = 56 }: { icon: string; size?: number }) {
   const info = iconMap[icon] || { bg: "#333", label: icon.slice(0, 2).toUpperCase(), color: "#fff" };
 
   return (
     <div
-      className="rounded-xl flex items-center justify-center font-bold shrink-0"
       style={{
         width: size,
         height: size,
         backgroundColor: info.bg,
         color: info.color,
         fontSize: size * 0.35,
+        borderRadius: 14,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontWeight: 700,
+        flexShrink: 0,
+        transform: "translateZ(0)",
       }}
     >
       {info.label}

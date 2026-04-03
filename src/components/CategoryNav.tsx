@@ -1,11 +1,11 @@
 "use client";
 
 const categories = [
-  { id: "all", label: "All", icon: "⬡" },
-  { id: "streaming", label: "Streaming", icon: "▶" },
-  { id: "gaming", label: "Gaming", icon: "◆" },
-  { id: "apps", label: "Apps", icon: "◈" },
-  { id: "favorites", label: "Favorites", icon: "★" },
+  { id: "all", label: "All" },
+  { id: "streaming", label: "Streaming" },
+  { id: "gaming", label: "Gaming" },
+  { id: "apps", label: "Apps" },
+  { id: "favorites", label: "Favorites" },
 ];
 
 export default function CategoryNav({
@@ -16,21 +16,32 @@ export default function CategoryNav({
   onChange: (category: string) => void;
 }) {
   return (
-    <nav className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-      {categories.map((cat) => (
-        <button
-          key={cat.id}
-          onClick={() => onChange(cat.id)}
-          className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-300 ${
-            active === cat.id
-              ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 shadow-[0_0_10px_rgba(0,255,255,0.2)]"
-              : "bg-gray-800/50 text-gray-400 border border-gray-700/50 hover:text-gray-200 hover:border-gray-600"
-          }`}
-        >
-          <span className="text-xs">{cat.icon}</span>
-          {cat.label}
-        </button>
-      ))}
+    <nav style={{ display: "flex", gap: 8, overflow: "hidden" }}>
+      {categories.map((cat) => {
+        const isActive = active === cat.id;
+        return (
+          <button
+            key={cat.id}
+            onClick={() => onChange(cat.id)}
+            style={{
+              padding: "10px 20px",
+              borderRadius: 999,
+              fontSize: 14,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              border: isActive ? "1px solid var(--cyan)" : "1px solid rgba(75,85,99,0.4)",
+              background: isActive ? "var(--cyan-dim)" : "rgba(31,41,55,0.5)",
+              color: isActive ? "var(--cyan)" : "#9ca3af",
+              cursor: "pointer",
+              minHeight: 44,
+              minWidth: 44,
+              transition: "background 0.15s, color 0.15s, border-color 0.15s",
+            }}
+          >
+            {cat.label}
+          </button>
+        );
+      })}
     </nav>
   );
 }

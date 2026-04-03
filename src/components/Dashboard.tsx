@@ -65,37 +65,71 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
-      {/* Cyber grid background */}
-      <div className="fixed inset-0 opacity-5 pointer-events-none"
+    <div
+      style={{
+        width: "100vw",
+        height: "100vh",
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        background: "linear-gradient(135deg, #030712 0%, #0f172a 50%, #030712 100%)",
+        position: "relative",
+      }}
+    >
+      {/* Cyber grid overlay - GPU accelerated */}
+      <div
+        className="cyber-grid"
         style={{
-          backgroundImage: `linear-gradient(rgba(0,255,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,255,0.3) 1px, transparent 1px)`,
-          backgroundSize: "60px 60px",
+          position: "fixed",
+          inset: 0,
+          opacity: 0.4,
+          pointerEvents: "none",
+          zIndex: 0,
         }}
       />
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 py-6">
-        {/* Header */}
-        <header className="mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center">
-                <span className="text-cyan-400 font-bold text-lg">C</span>
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-white tracking-tight">
-                  Cyber<span className="text-cyan-400">Dash</span>
-                </h1>
-                <p className="text-gray-500 text-xs tracking-widest uppercase">
-                  Drive. Watch. Explore.
-                </p>
-              </div>
+      {/* Header - fixed, never scrolls */}
+      <header
+        style={{
+          position: "relative",
+          zIndex: 10,
+          padding: "16px 24px 12px",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          {/* Logo */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                background: "var(--cyan-dim)",
+                border: "1px solid var(--cyan-border)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <span style={{ color: "var(--cyan)", fontWeight: 700, fontSize: 20 }}>C</span>
             </div>
+            <div>
+              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#fff", letterSpacing: "-0.02em" }}>
+                Cyber<span style={{ color: "var(--cyan)" }}>Dash</span>
+              </h1>
+              <p style={{ margin: 0, fontSize: 11, color: "#6b7280", letterSpacing: "0.15em", textTransform: "uppercase" }}>
+                Drive. Watch. Explore.
+              </p>
+            </div>
+          </div>
 
+          {/* Search + Video Player input */}
+          <div style={{ display: "flex", alignItems: "center", gap: 16, flex: 1, maxWidth: 700, marginLeft: 32 }}>
             {/* Search */}
-            <div className="relative w-72">
+            <div style={{ position: "relative", width: 240 }}>
               <svg
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"
+                style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, color: "#6b7280" }}
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -108,59 +142,87 @@ export default function Dashboard() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search apps..."
-                className="w-full bg-gray-800/50 border border-gray-700/50 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500/50 transition-all"
+                style={{
+                  width: "100%",
+                  background: "rgba(31,41,55,0.5)",
+                  border: "1px solid rgba(75,85,99,0.4)",
+                  borderRadius: 12,
+                  paddingLeft: 36,
+                  paddingRight: 12,
+                  paddingTop: 10,
+                  paddingBottom: 10,
+                  fontSize: 14,
+                  color: "#fff",
+                  outline: "none",
+                  minHeight: 44,
+                  boxSizing: "border-box",
+                }}
               />
             </div>
+
+            {/* Video player inline */}
+            <div style={{ flex: 1 }}>
+              <VideoPlayer />
+            </div>
           </div>
+        </div>
 
-          <CategoryNav active={category} onChange={setCategory} />
-        </header>
+        {/* Category tabs */}
+        <CategoryNav active={category} onChange={setCategory} />
+      </header>
 
-        {/* Video Player */}
-        <section className="mb-8">
-          <VideoPlayer />
-        </section>
-
-        {/* App Grid */}
-        <section>
-          {loading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="bg-gray-900/40 border border-gray-800/50 rounded-2xl p-4 h-32 animate-pulse"
-                />
-              ))}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="text-center py-16">
-              <p className="text-gray-500 text-lg">
-                {category === "favorites"
-                  ? "No favorites yet. Star an app to add it here."
-                  : "No apps found."}
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {filtered.map((app) => (
-                <AppCard
-                  key={app.id}
-                  app={app}
-                  isFavorite={favorites.has(app.id)}
-                  onToggleFavorite={toggleFavorite}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Footer */}
-        <footer className="mt-12 py-6 border-t border-gray-800/50 text-center">
-          <p className="text-gray-600 text-xs">
-            CyberDash &mdash; Optimized for Tesla Browser
-          </p>
-        </footer>
-      </div>
+      {/* App Grid - scrollable area */}
+      <main
+        className="scroll-area"
+        style={{
+          flex: 1,
+          position: "relative",
+          zIndex: 10,
+          padding: "8px 24px 16px",
+          minHeight: 0,
+        }}
+      >
+        {loading ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 16 }}>
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  background: "rgba(17,24,39,0.4)",
+                  border: "1px solid rgba(75,85,99,0.2)",
+                  borderRadius: 16,
+                  height: 140,
+                }}
+              />
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "60px 0" }}>
+            <p style={{ color: "#6b7280", fontSize: 16 }}>
+              {category === "favorites"
+                ? "No favorites yet. Tap the star on any app."
+                : "No apps found."}
+            </p>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+              gap: 16,
+            }}
+          >
+            {filtered.map((app) => (
+              <AppCard
+                key={app.id}
+                app={app}
+                isFavorite={favorites.has(app.id)}
+                onToggleFavorite={toggleFavorite}
+              />
+            ))}
+          </div>
+        )}
+      </main>
     </div>
   );
 }
