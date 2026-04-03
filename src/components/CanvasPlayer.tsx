@@ -8,6 +8,13 @@ interface CanvasPlayerProps {
   onClose: () => void;
 }
 
+const ERROR_CODES: Record<number, string> = {
+  1: "Video loading aborted",
+  2: "Network error while loading",
+  3: "Video decoding failed",
+  4: "Video format not supported",
+};
+
 export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -27,13 +34,13 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Scale canvas to match video
-    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-      canvas.width = video.videoWidth || 1280;
-      canvas.height = video.videoHeight || 720;
+    if (video.videoWidth && video.videoHeight) {
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     }
-
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     if (!video.paused && !video.ended) {
       animFrameRef.current = requestAnimationFrame(drawFrame);
@@ -41,36 +48,45 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
   }, []);
 
   useEffect(() => {
-    // Create a hidden video element (not added to DOM visible area)
     const video = document.createElement("video");
     video.crossOrigin = "anonymous";
     video.playsInline = true;
     video.preload = "auto";
+    video.muted = false;
 
-    // Style to hide — position off-screen, not display:none
-    // (display:none prevents decoding on some browsers)
-    video.style.position = "fixed";
-    video.style.top = "-9999px";
-    video.style.left = "-9999px";
+    // Position the video element inside the DOM but visually hidden
+    // Using clip instead of display:none so the browser still decodes frames
+    video.style.position = "absolute";
     video.style.width = "1px";
     video.style.height = "1px";
-    video.style.opacity = "0.01";
-    video.style.pointerEvents = "none";
+    video.style.clip = "rect(0,0,0,0)";
+    video.style.clipPath = "inset(50%)";
+    video.style.overflow = "hidden";
+    video.style.whiteSpace = "nowrap";
 
-    document.body.appendChild(video);
+    // Append to the canvas container so it's part of the visible DOM tree
+    const container = canvasRef.current?.parentElement;
+    if (container) {
+      container.appendChild(video);
+    } else {
+      document.body.appendChild(video);
+    }
     videoRef.current = video;
 
-    // Set source to our proxy stream
-    video.src = `/api/youtube/stream?v=${videoId}`;
+    const streamUrl = `/api/youtube/stream?v=${videoId}`;
 
     video.onloadedmetadata = () => {
       setDuration(video.duration);
       setLoading(false);
     };
 
+    video.oncanplay = () => {
+      setLoading(false);
+    };
+
     video.ontimeupdate = () => {
       setCurrentTime(video.currentTime);
-      if (video.duration) {
+      if (video.duration && isFinite(video.duration)) {
         setProgress((video.currentTime / video.duration) * 100);
       }
     };
@@ -84,20 +100,31 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
     video.onended = () => setPlaying(false);
 
     video.onerror = () => {
-      setError("Failed to load video. Try a different video.");
+      const code = video.error?.code || 0;
+      const msg = ERROR_CODES[code] || video.error?.message || "Unknown error";
+      console.error("Video error:", code, msg, video.error);
+      setError(`${msg} (code ${code})`);
       setLoading(false);
     };
 
-    // Auto-play
-    video.play().catch(() => {
-      // Autoplay blocked — user needs to tap play
-      setLoading(false);
-    });
+    // Load the video
+    video.src = streamUrl;
+    video.load();
+
+    // Try to autoplay after a short delay
+    const playTimer = setTimeout(() => {
+      video.play().catch(() => {
+        // Autoplay blocked — user needs to tap play
+        setLoading(false);
+      });
+    }, 500);
 
     return () => {
+      clearTimeout(playTimer);
       cancelAnimationFrame(animFrameRef.current);
       video.pause();
-      video.src = "";
+      video.removeAttribute("src");
+      video.load();
       video.remove();
       videoRef.current = null;
     };
@@ -107,8 +134,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      video.play();
-      drawFrame();
+      video.play().then(() => drawFrame()).catch(() => {});
     } else {
       video.pause();
     }
@@ -116,7 +142,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
 
   const seek = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     const video = videoRef.current;
-    if (!video || !video.duration) return;
+    if (!video || !video.duration || !isFinite(video.duration)) return;
 
     const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
@@ -125,6 +151,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
   };
 
   const formatTime = (seconds: number) => {
+    if (!isFinite(seconds)) return "0:00";
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
     return `${m}:${s.toString().padStart(2, "0")}`;
@@ -156,7 +183,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
           zIndex: 2,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, overflow: "hidden", flex: 1 }}>
           <span style={{ color: "var(--cyan)", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>CyberDash</span>
           <span style={{ color: "#6b7280", fontSize: 13 }}>/</span>
           <span style={{ color: "#e5e7eb", fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -183,7 +210,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
         </button>
       </div>
 
-      {/* Canvas - the actual video display (not a <video> element!) */}
+      {/* Canvas video display */}
       <div
         style={{ flex: 1, position: "relative", background: "#000", overflow: "hidden" }}
         onClick={togglePlay}
@@ -198,33 +225,59 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
           }}
         />
 
-        {/* Loading overlay */}
         {loading && (
           <div style={{
             position: "absolute", inset: 0,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            background: "rgba(0,0,0,0.8)",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            background: "rgba(0,0,0,0.85)",
           }}>
-            <div style={{ color: "var(--cyan)", fontSize: 18, fontWeight: 600 }}>
+            <div style={{ color: "var(--cyan)", fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
               Loading video...
+            </div>
+            <div style={{ color: "#6b7280", fontSize: 13 }}>
+              Streaming through CyberDash proxy
             </div>
           </div>
         )}
 
-        {/* Error overlay */}
         {error && (
           <div style={{
             position: "absolute", inset: 0,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            background: "rgba(0,0,0,0.8)",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            background: "rgba(0,0,0,0.85)", gap: 12,
           }}>
-            <div style={{ color: "#f87171", fontSize: 16, textAlign: "center", padding: 32 }}>
+            <div style={{ color: "#f87171", fontSize: 16, textAlign: "center", padding: "0 32px" }}>
               {error}
             </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setError(null);
+                setLoading(true);
+                const video = videoRef.current;
+                if (video) {
+                  video.src = `/api/youtube/stream?v=${videoId}`;
+                  video.load();
+                  video.play().catch(() => setLoading(false));
+                }
+              }}
+              style={{
+                padding: "10px 24px",
+                background: "var(--cyan-dim)",
+                color: "var(--cyan)",
+                border: "1px solid var(--cyan-border)",
+                borderRadius: 10,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+                minHeight: 44,
+              }}
+            >
+              Retry
+            </button>
           </div>
         )}
 
-        {/* Play/pause indicator */}
         {!loading && !error && !playing && (
           <div style={{
             position: "absolute", inset: 0,
@@ -233,11 +286,11 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
           }}>
             <div style={{
               width: 80, height: 80, borderRadius: 999,
-              background: "rgba(34,211,238,0.2)",
-              border: "2px solid var(--cyan)",
+              background: "rgba(255,0,0,0.2)",
+              border: "2px solid rgba(255,0,0,0.6)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <svg width={36} height={36} viewBox="0 0 24 24" fill="var(--cyan)">
+              <svg width={36} height={36} viewBox="0 0 24 24" fill="#FF0000">
                 <path d="M8 5v14l11-7z" />
               </svg>
             </div>
@@ -245,7 +298,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
         )}
       </div>
 
-      {/* Controls bar */}
+      {/* Controls */}
       <div
         style={{
           padding: "8px 16px 12px",
@@ -254,17 +307,13 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
           flexShrink: 0,
         }}
       >
-        {/* Progress bar - touch friendly */}
         <div
           onClick={seek}
           onTouchStart={seek}
           style={{
-            width: "100%",
-            height: 32,
-            display: "flex",
-            alignItems: "center",
-            cursor: "pointer",
-            touchAction: "none",
+            width: "100%", height: 32,
+            display: "flex", alignItems: "center",
+            cursor: "pointer", touchAction: "none",
           }}
         >
           <div style={{
@@ -273,7 +322,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
           }}>
             <div style={{
               width: `${progress}%`, height: "100%",
-              background: "var(--cyan)", borderRadius: 2,
+              background: "#FF0000", borderRadius: 2,
               transition: "width 0.1s linear",
             }} />
           </div>
@@ -282,20 +331,20 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <button
-              onClick={togglePlay}
+              onClick={(e) => { e.stopPropagation(); togglePlay(); }}
               style={{
                 width: 48, height: 48, minHeight: 48, minWidth: 48,
                 display: "flex", alignItems: "center", justifyContent: "center",
-                background: "var(--cyan-dim)", border: "1px solid var(--cyan-border)",
+                background: "rgba(255,0,0,0.12)", border: "1px solid rgba(255,0,0,0.3)",
                 borderRadius: 999, cursor: "pointer",
               }}
             >
               {playing ? (
-                <svg width={20} height={20} viewBox="0 0 24 24" fill="var(--cyan)">
+                <svg width={20} height={20} viewBox="0 0 24 24" fill="#FF0000">
                   <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
                 </svg>
               ) : (
-                <svg width={20} height={20} viewBox="0 0 24 24" fill="var(--cyan)">
+                <svg width={20} height={20} viewBox="0 0 24 24" fill="#FF0000">
                   <path d="M8 5v14l11-7z" />
                 </svg>
               )}
