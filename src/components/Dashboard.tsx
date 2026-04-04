@@ -6,6 +6,8 @@ import Logo from "./Logo";
 import AppViewer from "./AppViewer";
 import CanvasPlayer from "./CanvasPlayer";
 import YouTubeBrowser from "./YouTubeBrowser";
+import EinthusanBrowser from "./EinthusanBrowser";
+import WasmPlayerDirect from "./WasmPlayerDirect";
 import { getSessionId } from "@/lib/session";
 import { getOpenMode } from "@/lib/appConfig";
 
@@ -21,7 +23,9 @@ interface App {
 type ViewerState =
   | { type: "iframe"; name: string; url: string }
   | { type: "youtube"; videoId: string; title: string }
-  | { type: "youtube-browse" };
+  | { type: "youtube-browse" }
+  | { type: "einthusan-browse" }
+  | { type: "einthusan-play"; title: string; streamUrl: string };
 
 export default function Dashboard() {
   const [apps, setApps] = useState<App[]>([]);
@@ -102,6 +106,19 @@ export default function Dashboard() {
         <YouTubeBrowser
           onPlay={(videoId, title) => setViewer({ type: "youtube", videoId, title })}
           onClose={() => setViewer(null)}
+        />
+      )}
+      {viewer?.type === "einthusan-browse" && (
+        <EinthusanBrowser
+          onPlay={(_movieId, title, streamUrl) => setViewer({ type: "einthusan-play", title, streamUrl })}
+          onClose={() => setViewer(null)}
+        />
+      )}
+      {viewer?.type === "einthusan-play" && (
+        <WasmPlayerDirect
+          title={viewer.title}
+          streamUrl={viewer.streamUrl}
+          onClose={() => setViewer({ type: "einthusan-browse" })}
         />
       )}
 
@@ -212,6 +229,37 @@ export default function Dashboard() {
                   </div>
                 </div>
 
+                <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth={2}>
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+              </div>
+
+              {/* ===== EINTHUSAN CARD ===== */}
+              <div
+                className="press-effect"
+                onClick={() => setViewer({ type: "einthusan-browse" })}
+                style={{
+                  display: "flex", alignItems: "center", gap: 20, padding: "20px 28px",
+                  background: "linear-gradient(135deg, rgba(229,9,20,0.12) 0%, rgba(17,24,39,0.8) 50%, rgba(229,9,20,0.08) 100%)",
+                  border: "1px solid rgba(229,9,20,0.3)", borderRadius: 20, cursor: "pointer",
+                  width: "100%", maxWidth: 480, position: "relative", overflow: "hidden",
+                }}
+              >
+                <div style={{ position: "absolute", top: 0, left: 0, width: 40, height: 40, borderTop: "2px solid rgba(229,9,20,0.5)", borderLeft: "2px solid rgba(229,9,20,0.5)", borderRadius: "20px 0 0 0" }} />
+                <div style={{ position: "absolute", bottom: 0, right: 0, width: 40, height: 40, borderBottom: "2px solid rgba(229,9,20,0.5)", borderRight: "2px solid rgba(229,9,20,0.5)", borderRadius: "0 0 20px 0" }} />
+
+                <div style={{ width: 56, height: 56, borderRadius: 14, background: "#E50914", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <span style={{ color: "#fff", fontWeight: 800, fontSize: 22 }}>E</span>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", marginBottom: 2 }}>Einthusan</div>
+                  <div style={{ fontSize: 13, color: "#d1d5db" }}>Tamil, Hindi, Telugu & more movies</div>
+                  <div style={{
+                    display: "inline-block", marginTop: 8, padding: "4px 12px",
+                    background: "rgba(229,9,20,0.15)", border: "1px solid rgba(229,9,20,0.3)",
+                    borderRadius: 999, color: "#f87171", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em",
+                  }}>Works while driving</div>
+                </div>
                 <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth={2}>
                   <path d="M9 18l6-6-6-6" />
                 </svg>
