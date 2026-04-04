@@ -222,12 +222,10 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
         const res = await fetch(streamUrl);
         if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
-        // Set audio source — only if it's a different URL (YouTube separate audio)
-        // For Pluto/same-URL streams, audio is already in the MP4, so use blob later
+        // Set audio source — use separate audio URL if provided, otherwise same stream
         const audio = audioRef.current;
-        const isSeperateAudio = audioStreamUrl && audioStreamUrl !== streamUrl;
-        if (audio && isSeperateAudio) {
-          audio.src = audioStreamUrl;
+        if (audio) {
+          audio.src = audioStreamUrl || streamUrl;
           audio.load();
         }
 
@@ -261,12 +259,6 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
             console.warn("[WasmPlayer] appendBuffer error:", e);
           }
 
-          // For streams without separate audio, set audio from blob once we have enough data
-          if (!isSeperateAudio && audio && !audio.src && offset > 100000) {
-            const blob = new Blob(allChunks as BlobPart[], { type: "video/mp4" });
-            audio.src = URL.createObjectURL(blob);
-            audio.load();
-          }
         }
 
         try { mp4.flush(); } catch {}
