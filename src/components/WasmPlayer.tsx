@@ -24,6 +24,10 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
     cancelled: false,
     started: false,
     framesDrawn: 0,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mp4File: null as any,
+    videoTrackId: 0,
+    fullBuffer: null as ArrayBuffer | null,
   });
 
   const [playing, setPlaying] = useState(false);
@@ -130,6 +134,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
         });
 
         const mp4 = MP4Box.createFile();
+        s.mp4File = mp4;
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         mp4.onReady = (info: any) => {
@@ -175,6 +180,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
               }
             }
 
+            s.videoTrackId = vt.id;
             mp4.setExtractionOptions(vt.id, "video", { nbSamples: 100 });
           } else {
             setDecoderState("NO VIDEO TRACK");
@@ -217,10 +223,13 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
         const reader = res.body.getReader();
         let offset = 0;
         const contentLength = parseInt(res.headers.get("content-length") || "0");
+        const allChunks: Uint8Array[] = [];
 
         while (true) {
           const { done, value } = await reader.read();
           if (done || s.cancelled) break;
+
+          allChunks.push(new Uint8Array(value));
 
           const buf = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer & { fileStart: number };
           buf.fileStart = offset;
@@ -233,6 +242,12 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
         }
 
         try { mp4.flush(); } catch {}
+
+        // Store full buffer for seeking
+        const full = new Uint8Array(offset);
+        let pos = 0;
+        for (const c of allChunks) { full.set(c, pos); pos += c.byteLength; }
+        s.fullBuffer = full.buffer;
 
         if (!s.started && s.frameQueue.length > 0) startPlayback();
         if (!s.started) {
@@ -285,7 +300,6 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
     const rect = bar.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const targetTime = pct * s.totalDuration;
-    const targetUs = targetTime * 1_000_000;
 
     // Seek audio
     if (audio && isFinite(targetTime)) audio.currentTime = targetTime;
@@ -293,24 +307,51 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
     // Reset video timing
     s.startTime = performance.now() - targetTime * 1000;
 
-    // Flush frames that are before the seek target (seeking forward)
-    // or ALL frames if seeking backward (they're all ahead of us)
-    const currentElapsed = (performance.now() - s.startTime) * 1000;
+    // Flush ALL existing frames
     while (s.frameQueue.length > 0) {
-      const frameTs = s.frameQueue[0].timestamp;
-      // Keep frames that are near or after the target
-      if (frameTs >= targetUs - 500000) break; // within 0.5s of target
       s.frameQueue.shift()!.close();
     }
 
-    // If we have a frame near the target, draw it immediately
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (canvas && ctx && s.frameQueue.length > 0) {
-      const frame = s.frameQueue[0];
-      if (canvas.width !== frame.displayWidth) canvas.width = frame.displayWidth;
-      if (canvas.height !== frame.displayHeight) canvas.height = frame.displayHeight;
-      ctx.drawImage(frame, 0, 0);
+    // Re-decode from the seek point using MP4Box seek
+    if (s.mp4File && s.videoTrackId && s.fullBuffer && s.videoDecoder?.state === "configured") {
+      try {
+        // Reset decoder to clear any pending frames
+        s.videoDecoder.reset();
+
+        // Re-configure (reset clears config)
+        const trak = s.mp4File.getTrackById(s.videoTrackId);
+        const codec = trak?.mdia?.minf?.stbl?.stsd?.entries?.[0]?.avcC
+          ? trak.codec : trak.codec;
+
+        let desc: Uint8Array | undefined;
+        try {
+          for (const entry of trak.mdia.minf.stbl.stsd.entries) {
+            const avcC = entry.avcC || entry.hvcC;
+            if (avcC) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const MP4Box = s.mp4File.constructor as any;
+              const ds = new MP4Box.DataStream(undefined, 0, MP4Box.DataStream.BIG_ENDIAN);
+              avcC.write(ds);
+              desc = new Uint8Array(ds.buffer, 8);
+              break;
+            }
+          }
+        } catch { /* no desc */ }
+
+        const cfg: VideoDecoderConfig = {
+          codec: codec,
+          codedWidth: trak.video?.width || 640,
+          codedHeight: trak.video?.height || 360,
+        };
+        if (desc) cfg.description = desc;
+        s.videoDecoder.configure(cfg);
+
+        // Seek MP4Box to the target time and re-extract samples
+        s.mp4File.seek(targetTime, true);
+        s.mp4File.start();
+      } catch {
+        // Seek failed — video will catch up when new frames arrive
+      }
     }
 
     setProgress(pct * 100);
