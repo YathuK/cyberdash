@@ -32,6 +32,8 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [status, setStatus] = useState("Connecting...");
+  const [frameCount, setFrameCount] = useState(0);
+  const [decoderState, setDecoderState] = useState("init");
 
   const renderLoop = useCallback(() => {
     const s = stateRef.current;
@@ -102,13 +104,19 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
         const mp4module = (await import("mp4box")) as any;
         const MP4Box = mp4module.default || mp4module;
 
+        let totalFrames = 0;
         s.videoDecoder = new VideoDecoder({
           output: (frame) => {
             if (s.cancelled) { frame.close(); return; }
+            totalFrames++;
+            setFrameCount(totalFrames);
             s.frameQueue.push(frame);
             if (s.frameQueue.length >= 5 && !s.started) startPlayback();
           },
-          error: (e) => console.error("[WasmPlayer] VDec:", e),
+          error: (e) => {
+            console.error("[WasmPlayer] VDec:", e);
+            setDecoderState(`error: ${e}`);
+          },
         });
 
         const mp4 = MP4Box.createFile();
@@ -139,8 +147,17 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
 
             const cfg: VideoDecoderConfig = { codec: vt.codec, codedWidth: vt.video?.width || 640, codedHeight: vt.video?.height || 360 };
             if (desc) cfg.description = desc;
-            try { s.videoDecoder.configure(cfg); } catch {
-              try { s.videoDecoder.configure({ codec: vt.codec, codedWidth: vt.video?.width || 640, codedHeight: vt.video?.height || 360 }); } catch {}
+            try {
+              s.videoDecoder.configure(cfg);
+              setDecoderState(`configured: ${vt.codec} ${vt.video?.width}x${vt.video?.height}`);
+            } catch (e) {
+              setDecoderState(`cfg fail: ${e}`);
+              try {
+                s.videoDecoder.configure({ codec: vt.codec, codedWidth: vt.video?.width || 640, codedHeight: vt.video?.height || 360 });
+                setDecoderState(`configured (no desc): ${vt.codec}`);
+              } catch (e2) {
+                setDecoderState(`cfg fail2: ${e2}`);
+              }
             }
             mp4.setExtractionOptions(vt.id, "video", { nbSamples: 100 });
           }
@@ -296,9 +313,16 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
         }}>Close</button>
       </div>
 
-      {/* Hidden audio element — Tesla allows audio while driving,
-          we just need it for sound. Loads same video URL (has audio track) */}
+      {/* Hidden audio element — Tesla allows audio while driving */}
       <audio ref={audioRef} src={streamUrl} preload="auto" style={{ display: "none" }} />
+
+      {/* Debug bar */}
+      <div style={{
+        padding: "2px 12px", background: "rgba(0,0,0,0.9)", color: "#facc15",
+        fontSize: 10, fontFamily: "monospace", borderBottom: "1px solid #facc15", flexShrink: 0,
+      }}>
+        decoder={decoderState} | frames={frameCount} | queue={stateRef.current.frameQueue.length} | started={stateRef.current.started ? "Y" : "N"}
+      </div>
 
       <div style={{ flex: 1, position: "relative", background: "#000", overflow: "hidden" }} onClick={togglePlay}>
         <canvas ref={canvasRef} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
