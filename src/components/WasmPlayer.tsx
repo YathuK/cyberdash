@@ -285,8 +285,34 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
     const rect = bar.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const targetTime = pct * s.totalDuration;
+    const targetUs = targetTime * 1_000_000;
+
+    // Seek audio
     if (audio && isFinite(targetTime)) audio.currentTime = targetTime;
+
+    // Reset video timing
     s.startTime = performance.now() - targetTime * 1000;
+
+    // Flush frames that are before the seek target (seeking forward)
+    // or ALL frames if seeking backward (they're all ahead of us)
+    const currentElapsed = (performance.now() - s.startTime) * 1000;
+    while (s.frameQueue.length > 0) {
+      const frameTs = s.frameQueue[0].timestamp;
+      // Keep frames that are near or after the target
+      if (frameTs >= targetUs - 500000) break; // within 0.5s of target
+      s.frameQueue.shift()!.close();
+    }
+
+    // If we have a frame near the target, draw it immediately
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (canvas && ctx && s.frameQueue.length > 0) {
+      const frame = s.frameQueue[0];
+      if (canvas.width !== frame.displayWidth) canvas.width = frame.displayWidth;
+      if (canvas.height !== frame.displayHeight) canvas.height = frame.displayHeight;
+      ctx.drawImage(frame, 0, 0);
+    }
+
     setProgress(pct * 100);
     setCurrentTime(targetTime);
   };

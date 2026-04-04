@@ -92,7 +92,11 @@ export default function Dashboard() {
         <AppViewer name={viewer.name} url={viewer.url} onClose={() => setViewer(null)} />
       )}
       {viewer?.type === "youtube" && (
-        <CanvasPlayer videoId={viewer.videoId} title={viewer.title} onClose={() => setViewer(null)} />
+        <CanvasPlayer
+          videoId={viewer.videoId}
+          title={viewer.title}
+          onClose={() => setViewer({ type: "youtube-browse" })}
+        />
       )}
       {viewer?.type === "youtube-browse" && (
         <YouTubeBrowser
