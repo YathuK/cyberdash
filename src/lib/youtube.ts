@@ -1,4 +1,4 @@
-import { Innertube, Platform } from "youtubei.js";
+import { Innertube, Platform, ClientType } from "youtubei.js";
 
 // Register JS evaluator for YouTube URL deciphering
 Platform.shim.eval = (code: unknown) => {
@@ -7,10 +7,10 @@ Platform.shim.eval = (code: unknown) => {
   return fn();
 };
 
-// Don't cache the instance — create fresh each time to avoid stale sessions
 export async function getInnertube() {
   return await Innertube.create({
     generate_session_locally: true,
     enable_safety_mode: false,
+    client_type: ClientType.TV,
   });
 }
