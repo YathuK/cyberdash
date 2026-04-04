@@ -8,9 +8,10 @@ interface WasmPlayerProps {
   title: string;
   streamUrl: string;
   onClose: () => void;
+  onError?: () => void;
 }
 
-export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmPlayerProps) {
+export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError }: WasmPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef({
     audioCtx: null as AudioContext | null,
@@ -94,7 +95,9 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmP
 
         // Dynamic import mp4box (can't be top-level in Next.js)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const MP4Box = (await import("mp4box")) as any;
+        const mp4boxModule = (await import("mp4box")) as any;
+        const MP4Box = mp4boxModule.default || mp4boxModule;
+        console.log("[WasmPlayer] MP4Box loaded, createFile:", typeof MP4Box.createFile, "DataStream:", typeof MP4Box.DataStream);
 
         // Video decoder
         s.videoDecoder = new VideoDecoder({
@@ -298,6 +301,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmP
           console.error("[WasmPlayer] Fatal error:", err);
           setError(`Failed: ${err instanceof Error ? err.message : err}`);
           setLoading(false);
+          onError?.();
         }
       }
     }

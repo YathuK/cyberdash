@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { getYouTubeStream } from "@/lib/youtubeClient";
 import WasmPlayer from "./WasmPlayer";
+import ErrorBoundary from "./ErrorBoundary";
 
 interface CanvasPlayerProps {
   videoId: string;
@@ -14,6 +15,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [embedUrl, setEmbedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [wasmCrashed, setWasmCrashed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,6 +26,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
 
       if (result.stream) {
         setStreamUrl(result.stream.url);
+        setEmbedUrl(result.embedUrl); // Keep embed as backup
       } else {
         setEmbedUrl(result.embedUrl);
       }
@@ -34,7 +37,6 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
     return () => { cancelled = true; };
   }, [videoId]);
 
-  // Loading state
   if (loading) {
     return (
       <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -43,13 +45,8 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
     );
   }
 
-  // Direct stream available — use WASM decoder (works while driving)
-  if (streamUrl) {
-    return <WasmPlayer videoId={videoId} title={title} streamUrl={streamUrl} onClose={onClose} />;
-  }
-
-  // Embed fallback (works when parked)
-  return (
+  // Embed player (fallback or crashed WASM)
+  const embedPlayer = (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "#000", display: "flex", flexDirection: "column" }}>
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -68,9 +65,27 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
         }}>Close</button>
       </div>
       <div style={{ flex: 1 }}>
-        <iframe src={embedUrl || ""} style={{ width: "100%", height: "100%", border: "none" }}
+        <iframe src={embedUrl || `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0`}
+          style={{ width: "100%", height: "100%", border: "none" }}
           allow="autoplay; fullscreen; encrypted-media" allowFullScreen />
       </div>
     </div>
   );
+
+  // Direct stream — try WASM player with error boundary
+  if (streamUrl && !wasmCrashed) {
+    return (
+      <ErrorBoundary fallback={embedPlayer}>
+        <WasmPlayer
+          videoId={videoId}
+          title={title}
+          streamUrl={streamUrl}
+          onClose={onClose}
+          onError={() => setWasmCrashed(true)}
+        />
+      </ErrorBoundary>
+    );
+  }
+
+  return embedPlayer;
 }
