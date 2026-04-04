@@ -14,12 +14,15 @@ export async function GET(request: NextRequest) {
 
     const streamingData = info.streaming_data;
     if (!streamingData) {
-      return Response.json({ error: "This video can't be played — it may be age-restricted, private, or a live stream" }, { status: 404 });
+      // Server can't get streaming data (likely IP blocked by YouTube)
+      // Return a fallback embed URL instead — the client will use this
+      return Response.json({
+        fallback: true,
+        embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0&modestbranding=1`,
+      });
     }
 
-    // Find best MP4 combined format (video + audio)
     const allCombined = (streamingData.formats || []).filter((f) => f.has_video && f.has_audio);
-
     const mp4Format = allCombined
       .filter((f) => f.mime_type?.includes("video/mp4"))
       .sort((a, b) => {
@@ -34,18 +37,21 @@ export async function GET(request: NextRequest) {
     const format = mp4Format || allCombined[0];
 
     if (!format) {
-      return Response.json({ error: "No playable format found" }, { status: 404 });
+      return Response.json({
+        fallback: true,
+        embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0&modestbranding=1`,
+      });
     }
 
-    // Decipher the URL and redirect the client directly to YouTube's CDN
-    // This avoids Vercel function timeout issues from proxying large video files
     const streamUrl = await format.decipher(yt.session.player);
 
     if (!streamUrl) {
-      return Response.json({ error: "Could not decipher stream URL" }, { status: 500 });
+      return Response.json({
+        fallback: true,
+        embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0&modestbranding=1`,
+      });
     }
 
-    // Return the direct URL — the client <video> element will fetch from YouTube's CDN
     return Response.json({
       url: streamUrl,
       mimeType: format.mime_type,
@@ -55,9 +61,10 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("YouTube stream error:", error);
-    return Response.json(
-      { error: `Stream failed: ${error instanceof Error ? error.message : error}` },
-      { status: 500 }
-    );
+    // On any error, fall back to embed
+    return Response.json({
+      fallback: true,
+      embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0&modestbranding=1`,
+    });
   }
 }
