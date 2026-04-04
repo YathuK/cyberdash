@@ -222,15 +222,11 @@ export default function Dashboard() {
                         }}>
                           {/* Netflix N */}
                           {app.icon === "netflix" && (
-                            <svg width={24} height={24} viewBox="0 0 24 24" fill="#fff">
-                              <path d="M5.398 0v.006c3.028 8.556 5.37 15.175 8.348 23.596 2.344.058 4.85.398 4.854.398-2.8-7.924-5.923-16.747-8.487-24h-4.715zm8.489 0v9.63L18.6 24c.105-.003 4.783-.37 4.8-.37-.002-10.806-.014-12.635-.014-23.63h-4.705v9.636L13.887 0H5.398z"/>
-                            </svg>
+                            <span style={{ color: "#fff", fontWeight: 900, fontSize: 26, fontFamily: "Arial, sans-serif" }}>N</span>
                           )}
                           {/* Amazon Prime */}
                           {app.icon === "prime" && (
-                            <svg width={26} height={26} viewBox="0 0 24 24" fill="#fff">
-                              <path d="M8 6l4 8 4-8M4 14l2-4M20 14l-2-4M2 18h20"/>
-                            </svg>
+                            <span style={{ color: "#fff", fontWeight: 800, fontSize: 10, textAlign: "center", lineHeight: 1.2 }}>prime<br/>video</span>
                           )}
                           {/* Disney+ */}
                           {app.icon === "disney" && (
