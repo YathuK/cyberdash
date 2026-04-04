@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getInnertube } from "@/lib/youtube";
+import { getInnertubeWeb } from "@/lib/youtube";
 
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get("q");
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const yt = await getInnertube();
+    const yt = await getInnertubeWeb();
     const results = await yt.search(query, { type: "video" });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

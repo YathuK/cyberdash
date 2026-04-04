@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { getInnertube } from "@/lib/youtube";
+import { getInnertubeWeb } from "@/lib/youtube";
 
 export async function GET(request: NextRequest) {
   const videoId = request.nextUrl.searchParams.get("v");
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const yt = await getInnertube();
+    const yt = await getInnertubeWeb();
     const info = await yt.getBasicInfo(videoId);
 
     const title = info.basic_info.title || "YouTube Video";
