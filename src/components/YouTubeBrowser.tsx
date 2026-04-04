@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { searchYouTube } from "@/lib/youtubeClient";
 
 interface Video {
   id: string;
@@ -45,9 +46,8 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
     setLoading(true);
     setSearched(true);
     try {
-      const res = await fetch(`/api/youtube/search?q=${encodeURIComponent(input)}`);
-      const data = await res.json();
-      setResults(data.videos || []);
+      const videos = await searchYouTube(input);
+      setResults(videos);
     } catch {
       setResults([]);
     }
