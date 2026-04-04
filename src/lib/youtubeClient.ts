@@ -2,7 +2,7 @@
 // then falls back to Vercel server-side extraction
 
 // Hardcoded — NEXT_PUBLIC env vars get replaced at build time and the fallback gets stripped
-const PROXY_URL = "https://introspectional-eosinlike-omega.ngrok-free.dev";
+const PROXY_URL = "https://pal-mens-documentation-dublin.trycloudflare.com";
 
 export interface StreamResult {
   stream?: { url: string; mimeType: string; quality: string };
@@ -16,7 +16,6 @@ export async function getYouTubeStream(videoId: string): Promise<StreamResult> {
   if (PROXY_URL) {
     try {
       const res = await fetch(`${PROXY_URL}/stream?v=${videoId}`, {
-        headers: { "ngrok-skip-browser-warning": "true" },
       });
       const text = await res.text();
       // Guard against ngrok HTML warning page
@@ -70,7 +69,6 @@ export async function searchYouTube(query: string) {
   if (PROXY_URL) {
     try {
       const res = await fetch(`${PROXY_URL}/search?q=${encodeURIComponent(query)}`, {
-        headers: { "ngrok-skip-browser-warning": "true" },
       });
       const text = await res.text();
       if (text.startsWith("{")) {

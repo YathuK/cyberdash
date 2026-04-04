@@ -12,13 +12,11 @@ interface WasmPlayerProps {
 
 export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError }: WasmPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const stateRef = useRef({
-    audioCtx: null as AudioContext | null,
     videoDecoder: null as VideoDecoder | null,
-    audioDecoder: null as AudioDecoder | null,
     frameQueue: [] as VideoFrame[],
     startTime: 0,
-    audioBaseTime: 0,
     rafId: 0,
     paused: false,
     pausedAt: 0,
@@ -43,7 +41,11 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) { s.rafId = requestAnimationFrame(renderLoop); return; }
 
-    const elapsed = (performance.now() - s.startTime) * 1000;
+    // Sync to audio element time if available, otherwise use wall clock
+    const audio = audioRef.current;
+    const elapsed = audio && !audio.paused && audio.currentTime > 0
+      ? audio.currentTime * 1_000_000  // microseconds from audio time
+      : (performance.now() - s.startTime) * 1000;
 
     while (s.frameQueue.length > 1 && s.frameQueue[0].timestamp < elapsed) {
       s.frameQueue.shift()!.close();
@@ -70,7 +72,13 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
     s.started = true;
     s.startTime = performance.now();
     s.paused = false;
-    s.audioCtx?.resume();
+
+    // Start audio element
+    const audio = audioRef.current;
+    if (audio) {
+      audio.play().catch(() => {});
+    }
+
     setLoading(false);
     setPlaying(true);
     renderLoop();
@@ -98,33 +106,9 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
           output: (frame) => {
             if (s.cancelled) { frame.close(); return; }
             s.frameQueue.push(frame);
-            if (s.frameQueue.length >= 3 && !s.started) startPlayback();
+            if (s.frameQueue.length >= 5 && !s.started) startPlayback();
           },
           error: (e) => console.error("[WasmPlayer] VDec:", e),
-        });
-
-        s.audioCtx = new AudioContext();
-        s.audioBaseTime = 0;
-
-        s.audioDecoder = new AudioDecoder({
-          output: (audioData) => {
-            if (s.cancelled || !s.audioCtx) { audioData.close(); return; }
-            try {
-              const buf = s.audioCtx.createBuffer(audioData.numberOfChannels, audioData.numberOfFrames, audioData.sampleRate);
-              for (let ch = 0; ch < audioData.numberOfChannels; ch++) {
-                const cd = new Float32Array(audioData.numberOfFrames);
-                audioData.copyTo(cd, { planeIndex: ch, format: "f32-planar" });
-                buf.copyToChannel(cd, ch);
-              }
-              const src = s.audioCtx.createBufferSource();
-              src.buffer = buf;
-              src.connect(s.audioCtx.destination);
-              if (s.audioBaseTime === 0) s.audioBaseTime = s.audioCtx.currentTime;
-              src.start(s.audioBaseTime + audioData.timestamp / 1_000_000);
-            } catch { /* non-fatal */ }
-            audioData.close();
-          },
-          error: (e) => console.error("[WasmPlayer] ADec:", e),
         });
 
         const mp4 = MP4Box.createFile();
@@ -137,8 +121,6 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const vt = info.tracks.find((t: any) => t.type === "video");
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const at = info.tracks.find((t: any) => t.type === "audio");
 
           if (vt && s.videoDecoder) {
             let desc: Uint8Array | undefined;
@@ -158,54 +140,34 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
             const cfg: VideoDecoderConfig = { codec: vt.codec, codedWidth: vt.video?.width || 640, codedHeight: vt.video?.height || 360 };
             if (desc) cfg.description = desc;
             try { s.videoDecoder.configure(cfg); } catch {
-              try { s.videoDecoder.configure({ codec: vt.codec, codedWidth: vt.video?.width || 640, codedHeight: vt.video?.height || 360 }); } catch { /* give up */ }
+              try { s.videoDecoder.configure({ codec: vt.codec, codedWidth: vt.video?.width || 640, codedHeight: vt.video?.height || 360 }); } catch {}
             }
-            mp4.setExtractionOptions(vt.id, "video", { nbSamples: 50 });
+            mp4.setExtractionOptions(vt.id, "video", { nbSamples: 100 });
           }
 
-          if (at && s.audioDecoder) {
-            try {
-              const acfg: AudioDecoderConfig = { codec: at.codec, sampleRate: at.audio?.sample_rate || 44100, numberOfChannels: at.audio?.channel_count || 2 };
-              try {
-                const trak = mp4.getTrackById(at.id);
-                for (const entry of trak.mdia.minf.stbl.stsd.entries) {
-                  if (entry.esds) {
-                    const ds = new MP4Box.DataStream(undefined, 0, MP4Box.DataStream.BIG_ENDIAN);
-                    entry.esds.write(ds);
-                    acfg.description = new Uint8Array(ds.buffer, 8);
-                    break;
-                  }
-                }
-              } catch { /* no audio desc */ }
-              s.audioDecoder.configure(acfg);
-              mp4.setExtractionOptions(at.id, "audio", { nbSamples: 50 });
-            } catch { /* audio not supported */ }
-          }
-
+          // We DON'T extract audio from MP4 — the <audio> element handles it
           mp4.start();
         };
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         mp4.onSamples = (_id: number, type: string, samples: any[]) => {
-          if (s.cancelled) return;
+          if (s.cancelled || type !== "video") return;
           for (const sample of samples) {
-            const ts = (sample.cts * 1_000_000) / sample.timescale;
-            const dur = (sample.duration * 1_000_000) / sample.timescale;
             try {
-              if (type === "video" && s.videoDecoder?.state === "configured") {
-                s.videoDecoder.decode(new EncodedVideoChunk({ type: sample.is_sync ? "key" : "delta", timestamp: ts, duration: dur, data: sample.data }));
-              } else if (type === "audio" && s.audioDecoder?.state === "configured") {
-                s.audioDecoder.decode(new EncodedAudioChunk({ type: "key", timestamp: ts, data: sample.data }));
+              if (s.videoDecoder?.state === "configured") {
+                s.videoDecoder.decode(new EncodedVideoChunk({
+                  type: sample.is_sync ? "key" : "delta",
+                  timestamp: (sample.cts * 1_000_000) / sample.timescale,
+                  duration: (sample.duration * 1_000_000) / sample.timescale,
+                  data: sample.data,
+                }));
               }
             } catch { /* decode error */ }
           }
         };
 
-        // Stream video bytes from local proxy
         setStatus("Buffering...");
-        const res = await fetch(streamUrl, {
-          headers: { "ngrok-skip-browser-warning": "true" },
-        });
+        const res = await fetch(streamUrl);
         if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
         const reader = res.body.getReader();
@@ -218,13 +180,12 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
           const buf = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer & { fileStart: number };
           buf.fileStart = offset;
           offset += buf.byteLength;
-
           if (!s.started) setStatus(`Buffering... ${Math.round(offset / 1024)} KB`);
 
           try { mp4.appendBuffer(buf); } catch { /* append error */ }
         }
 
-        try { mp4.flush(); } catch { /* flush error */ }
+        try { mp4.flush(); } catch {}
 
         if (!s.started && s.frameQueue.length > 0) startPlayback();
         if (!s.started) {
@@ -248,29 +209,28 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
       cancelAnimationFrame(s.rafId);
       s.frameQueue.forEach((f) => { try { f.close(); } catch {} });
       s.frameQueue = [];
-      try { s.videoDecoder?.close(); } catch {}
-      try { s.audioDecoder?.close(); } catch {}
-      try { s.audioCtx?.close(); } catch {}
+      try { s.videoDecoder?.close(); } catch {};
     };
   }, [streamUrl, renderLoop, startPlayback, onError]);
 
   const togglePlay = () => {
     const s = stateRef.current;
+    const audio = audioRef.current;
     if (s.paused) {
       s.paused = false;
       s.startTime += performance.now() - s.pausedAt;
-      s.audioCtx?.resume();
+      audio?.play();
       setPlaying(true);
       renderLoop();
     } else {
       s.paused = true;
       s.pausedAt = performance.now();
-      s.audioCtx?.suspend();
+      audio?.pause();
       setPlaying(false);
     }
   };
 
-  const fmt = (s: number) => !isFinite(s) ? "0:00" : `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, "0")}`;
+  const fmt = (sec: number) => !isFinite(sec) ? "0:00" : `${Math.floor(sec / 60)}:${Math.floor(sec % 60).toString().padStart(2, "0")}`;
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "#000", display: "flex", flexDirection: "column" }}>
@@ -291,6 +251,10 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
           fontSize: 14, fontWeight: 600, cursor: "pointer", minHeight: 40,
         }}>Close</button>
       </div>
+
+      {/* Hidden audio element — Tesla allows audio while driving,
+          we just need it for sound. Loads same video URL (has audio track) */}
+      <audio ref={audioRef} src={streamUrl} preload="auto" style={{ display: "none" }} />
 
       <div style={{ flex: 1, position: "relative", background: "#000", overflow: "hidden" }} onClick={togglePlay}>
         <canvas ref={canvasRef} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
