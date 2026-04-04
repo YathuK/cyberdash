@@ -13,9 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CyberDash — Drive. Watch. Explore.",
+  title: "YaVik — Drive. Watch. Explore.",
   description:
     "Your Tesla entertainment dashboard. Stream, game, and explore — optimized for your in-car browser.",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export const viewport: Viewport = {

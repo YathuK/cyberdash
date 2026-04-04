@@ -33,7 +33,7 @@ export default function AppViewer({ name, url, onClose }: AppViewerProps) {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ color: "var(--cyan)", fontWeight: 700, fontSize: 14 }}>CyberDash</span>
+          <span style={{ color: "var(--cyan)", fontWeight: 700, fontSize: 14 }}>YaVik</span>
           <span style={{ color: "#6b7280", fontSize: 13 }}>/</span>
           <span style={{ color: "#e5e7eb", fontSize: 14, fontWeight: 500 }}>{name}</span>
         </div>

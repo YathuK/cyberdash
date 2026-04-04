@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import AppIcon from "./AppIcon";
+import Logo from "./Logo";
 import AppViewer from "./AppViewer";
 import CanvasPlayer from "./CanvasPlayer";
 import YouTubeBrowser from "./YouTubeBrowser";
@@ -126,24 +127,11 @@ export default function Dashboard() {
             flexShrink: 0,
           }}
         >
-          <div className="float" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 10,
-                background: "var(--cyan-dim)",
-                border: "1px solid var(--cyan-border)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <span style={{ color: "var(--cyan)", fontWeight: 700, fontSize: 18 }}>C</span>
-            </div>
+          <div className="float" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Logo size={44} />
             <div>
-              <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#fff" }}>
-                Cyber<span className="gradient-text">Dash</span>
+              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#fff", letterSpacing: "-0.02em" }}>
+                Ya<span className="gradient-text">Vik</span>
               </h1>
               <p style={{ margin: 0, fontSize: 10, color: "#6b7280", letterSpacing: "0.15em", textTransform: "uppercase" }}>
                 Drive. Watch. Explore.

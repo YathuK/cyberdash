@@ -142,7 +142,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
       borderBottom: "1px solid rgba(34,211,238,0.15)", flexShrink: 0, height: 48,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, overflow: "hidden", flex: 1 }}>
-        <span style={{ color: "var(--cyan)", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>CyberDash</span>
+        <span style={{ color: "var(--cyan)", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>YaVik</span>
         <span style={{ color: "#6b7280" }}>/</span>
         <span style={{ color: "#e5e7eb", fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
         {mode === "canvas" && (
