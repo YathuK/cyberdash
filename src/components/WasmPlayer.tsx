@@ -94,7 +94,9 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmP
         const MP4Box = (await import("mp4box")) as any;
 
         // Fetch the video
-        const res = await fetch(streamUrl);
+        const res = await fetch(streamUrl, {
+          headers: { "ngrok-skip-browser-warning": "true" },
+        });
         if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
         const arrayBuffer = await res.arrayBuffer();
         if (cancelled) return;
