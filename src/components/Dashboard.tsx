@@ -215,14 +215,61 @@ export default function Dashboard() {
                         }}
                       >
                         <div style={{
-                          width: 44, height: 44, borderRadius: 12,
-                          background: app.icon === "netflix" ? "#E50914" : app.icon === "prime" ? "#00A8E1" : app.icon === "disney" ? "#113CCF" : app.icon === "twitch" ? "#9146FF" : app.icon === "plex" ? "#E5A00D" : "#333",
+                          width: 48, height: 48, borderRadius: 12,
+                          background: app.icon === "netflix" ? "#E50914" : app.icon === "prime" ? "#00A8E1" : app.icon === "disney" ? "#0D1C46" : app.icon === "twitch" ? "#9146FF" : app.icon === "plex" ? "#E5A00D" : app.icon === "xbox" ? "#107C10" : app.icon === "nvidia" ? "#76B900" : app.icon === "luna" ? "#4B0082" : app.icon === "games" ? "#FF6B35" : "#333",
                           display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 16, fontWeight: 700, color: "#fff",
+                          overflow: "hidden",
                         }}>
-                          {app.name.charAt(0)}
+                          {/* Netflix N */}
+                          {app.icon === "netflix" && (
+                            <svg width={24} height={24} viewBox="0 0 24 24" fill="#fff">
+                              <path d="M5.398 0v.006c3.028 8.556 5.37 15.175 8.348 23.596 2.344.058 4.85.398 4.854.398-2.8-7.924-5.923-16.747-8.487-24h-4.715zm8.489 0v9.63L18.6 24c.105-.003 4.783-.37 4.8-.37-.002-10.806-.014-12.635-.014-23.63h-4.705v9.636L13.887 0H5.398z"/>
+                            </svg>
+                          )}
+                          {/* Amazon Prime */}
+                          {app.icon === "prime" && (
+                            <svg width={26} height={26} viewBox="0 0 24 24" fill="#fff">
+                              <path d="M8 6l4 8 4-8M4 14l2-4M20 14l-2-4M2 18h20"/>
+                            </svg>
+                          )}
+                          {/* Disney+ */}
+                          {app.icon === "disney" && (
+                            <span style={{ color: "#fff", fontWeight: 800, fontSize: 11, letterSpacing: "-0.02em" }}>Disney+</span>
+                          )}
+                          {/* Twitch */}
+                          {app.icon === "twitch" && (
+                            <svg width={22} height={22} viewBox="0 0 24 24" fill="#fff">
+                              <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/>
+                            </svg>
+                          )}
+                          {/* Plex */}
+                          {app.icon === "plex" && (
+                            <span style={{ color: "#000", fontWeight: 800, fontSize: 14 }}>PLEX</span>
+                          )}
+                          {/* Xbox */}
+                          {app.icon === "xbox" && (
+                            <svg width={22} height={22} viewBox="0 0 24 24" fill="#fff">
+                              <path d="M4.102 21.033C6.211 22.881 8.977 24 12 24s5.789-1.119 7.898-2.967c-1.083-.842-2.186-1.744-4.005-3.778-1.098 1.267-2.449 2.667-3.893 2.667s-2.795-1.4-3.893-2.667c-1.819 2.034-2.922 2.936-4.005 3.778zM12 0C8.57 0 5.508 1.477 3.378 3.838c.562.5 1.181 1.058 1.891 1.724 2.062-1.857 4.224-2.91 6.731-2.91s4.669 1.053 6.731 2.91c.71-.666 1.329-1.224 1.891-1.724C18.492 1.477 15.43 0 12 0z"/>
+                            </svg>
+                          )}
+                          {/* GeForce NOW */}
+                          {app.icon === "nvidia" && (
+                            <span style={{ color: "#000", fontWeight: 800, fontSize: 10 }}>GFN</span>
+                          )}
+                          {/* Luna */}
+                          {app.icon === "luna" && (
+                            <svg width={20} height={20} viewBox="0 0 24 24" fill="#fff">
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                            </svg>
+                          )}
+                          {/* CrazyGames */}
+                          {app.icon === "games" && (
+                            <svg width={20} height={20} viewBox="0 0 24 24" fill="#fff">
+                              <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+                            </svg>
+                          )}
                         </div>
-                        <div style={{ color: "#e5e7eb", fontWeight: 600, fontSize: 12 }}>{app.name}</div>
+                        <div style={{ color: "#e5e7eb", fontWeight: 600, fontSize: 11 }}>{app.name}</div>
                       </div>
                     ))}
                   </div>
