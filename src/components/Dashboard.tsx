@@ -171,7 +171,7 @@ export default function Dashboard() {
 
               {/* ===== YOUTUBE HERO CARD ===== */}
               <div
-                className="hero-glow animate-slide-up press-effect"
+                className="hero-glow press-effect"
                 onClick={() => setViewer({ type: "youtube-browse" })}
                 style={{
                   display: "flex",
@@ -243,7 +243,7 @@ export default function Dashboard() {
                     return (
                       <div
                         key={app.id}
-                        className={`animate-slide-up delay-${Math.min(i + 1, 9)} shimmer-border press-effect`}
+                        className="press-effect"
                         onClick={() => handleAppClick(app)}
                         style={{
                           display: "flex",
@@ -251,8 +251,8 @@ export default function Dashboard() {
                           alignItems: "center",
                           gap: 6,
                           padding: "12px 10px",
-                          background: "rgba(17, 24, 39, 0.6)",
-                          border: "1px solid var(--cyan-border)",
+                          background: "#111827",
+                          border: "1px solid rgba(34, 211, 238, 0.3)",
                           borderRadius: 14,
                           cursor: "pointer",
                           position: "relative",
