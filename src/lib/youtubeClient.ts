@@ -1,7 +1,8 @@
 // YouTube stream fetcher — tries external proxy first (residential IP),
 // then falls back to Vercel server-side extraction
 
-const PROXY_URL = process.env.NEXT_PUBLIC_YT_PROXY_URL || "https://introspectional-eosinlike-omega.ngrok-free.dev";
+// Hardcoded — NEXT_PUBLIC env vars get replaced at build time and the fallback gets stripped
+const PROXY_URL = "https://introspectional-eosinlike-omega.ngrok-free.dev";
 
 export interface StreamResult {
   stream?: { url: string; mimeType: string; quality: string };
