@@ -2,7 +2,7 @@
 // then falls back to Vercel server-side extraction
 
 // Hardcoded — NEXT_PUBLIC env vars get replaced at build time and the fallback gets stripped
-const PROXY_URL = "https://pal-mens-documentation-dublin.trycloudflare.com";
+const PROXY_URL = "https://greg-text-campbell-kerry.trycloudflare.com";
 
 export interface StreamResult {
   stream?: { url: string; audioUrl?: string; mimeType: string; quality: string };
