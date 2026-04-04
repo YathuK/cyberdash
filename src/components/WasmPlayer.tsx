@@ -230,6 +230,50 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
     }
   };
 
+  const [seeking, setSeeking] = useState(false);
+  const seekBarRef = useRef<HTMLDivElement>(null);
+
+  const seekTo = (clientX: number) => {
+    const bar = seekBarRef.current;
+    const audio = audioRef.current;
+    const s = stateRef.current;
+    if (!bar || !s.totalDuration) return;
+
+    const rect = bar.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const targetTime = pct * s.totalDuration;
+
+    // Seek audio element
+    if (audio && isFinite(targetTime)) {
+      audio.currentTime = targetTime;
+    }
+
+    // Reset video timing to match
+    s.startTime = performance.now() - targetTime * 1000;
+
+    setProgress(pct * 100);
+    setCurrentTime(targetTime);
+  };
+
+  const onSeekStart = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    setSeeking(true);
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    seekTo(clientX);
+  };
+
+  const onSeekMove = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!seeking) return;
+    e.stopPropagation();
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    seekTo(clientX);
+  };
+
+  const onSeekEnd = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    setSeeking(false);
+  };
+
   const fmt = (sec: number) => !isFinite(sec) ? "0:00" : `${Math.floor(sec / 60)}:${Math.floor(sec % 60).toString().padStart(2, "0")}`;
 
   return (
@@ -282,10 +326,42 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
       </div>
 
       <div style={{ padding: "8px 16px 12px", background: "rgba(3,7,18,0.95)", borderTop: "1px solid rgba(34,211,238,0.15)", flexShrink: 0 }}>
-        <div style={{ width: "100%", height: 4, background: "rgba(75,85,99,0.5)", borderRadius: 2, overflow: "hidden" }}>
-          <div style={{ width: `${progress}%`, height: "100%", background: "#FF0000", borderRadius: 2 }} />
+        {/* Draggable seek bar — large touch target */}
+        <div
+          ref={seekBarRef}
+          onMouseDown={onSeekStart}
+          onMouseMove={onSeekMove}
+          onMouseUp={onSeekEnd}
+          onMouseLeave={onSeekEnd}
+          onTouchStart={onSeekStart}
+          onTouchMove={onSeekMove}
+          onTouchEnd={onSeekEnd}
+          style={{
+            width: "100%", height: 44, display: "flex", alignItems: "center",
+            cursor: "pointer", touchAction: "none", position: "relative",
+          }}
+        >
+          {/* Track */}
+          <div style={{ width: "100%", height: 6, background: "rgba(75,85,99,0.5)", borderRadius: 3, position: "relative", overflow: "visible" }}>
+            {/* Filled */}
+            <div style={{ width: `${progress}%`, height: "100%", background: "#FF0000", borderRadius: 3 }} />
+            {/* Thumb */}
+            <div style={{
+              position: "absolute",
+              top: "50%",
+              left: `${progress}%`,
+              transform: "translate(-50%, -50%)",
+              width: seeking ? 20 : 14,
+              height: seeking ? 20 : 14,
+              borderRadius: 999,
+              background: "#FF0000",
+              border: "2px solid #fff",
+              transition: seeking ? "none" : "width 0.15s, height 0.15s",
+            }} />
+          </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 8 }}>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{
             width: 48, height: 48, minHeight: 48, minWidth: 48, display: "flex", alignItems: "center", justifyContent: "center",
             background: "rgba(255,0,0,0.12)", border: "1px solid rgba(255,0,0,0.3)", borderRadius: 999, cursor: "pointer",
