@@ -11,49 +11,43 @@ interface WasmPlayerProps {
 
 export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   const stateRef = useRef<{
     audioCtx: AudioContext | null;
     videoDecoder: VideoDecoder | null;
     audioDecoder: AudioDecoder | null;
     frameQueue: VideoFrame[];
     startTime: number;
-    audioStartTime: number;
+    audioBaseTime: number;
     rafId: number;
     paused: boolean;
     pausedAt: number;
     totalDuration: number;
+    cancelled: boolean;
   }>({
-    audioCtx: null,
-    videoDecoder: null,
-    audioDecoder: null,
-    frameQueue: [],
-    startTime: 0,
-    audioStartTime: 0,
-    rafId: 0,
-    paused: false,
-    pausedAt: 0,
-    totalDuration: 0,
+    audioCtx: null, videoDecoder: null, audioDecoder: null,
+    frameQueue: [], startTime: 0, audioBaseTime: 0, rafId: 0,
+    paused: false, pausedAt: 0, totalDuration: 0, cancelled: false,
   });
+
+  const [playing, setPlaying] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [downloaded, setDownloaded] = useState(0);
 
   const renderLoop = useCallback(() => {
     const s = stateRef.current;
-    if (s.paused) return;
+    if (s.paused || s.cancelled) return;
 
     const canvas = canvasRef.current;
     if (!canvas) { s.rafId = requestAnimationFrame(renderLoop); return; }
-
     const ctx = canvas.getContext("2d");
     if (!ctx) { s.rafId = requestAnimationFrame(renderLoop); return; }
 
-    const elapsed = (performance.now() - s.startTime) * 1000; // microseconds
+    const elapsed = (performance.now() - s.startTime) * 1000;
 
-    // Drop late frames, draw current
     while (s.frameQueue.length > 1 && s.frameQueue[0].timestamp < elapsed) {
       s.frameQueue.shift()!.close();
     }
@@ -67,7 +61,6 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmP
       ctx.drawImage(frame, 0, 0);
       frame.close();
 
-      // Update progress
       const timeSec = elapsed / 1_000_000;
       setCurrentTime(timeSec);
       if (s.totalDuration > 0) setProgress((timeSec / s.totalDuration) * 100);
@@ -77,211 +70,192 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmP
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
     const s = stateRef.current;
+    s.cancelled = false;
 
     async function init() {
       try {
-        // Check WebCodecs support
         if (typeof VideoDecoder === "undefined") {
-          setError("WebCodecs not supported in this browser");
+          setError("WebCodecs not supported — need Chromium 94+");
           setLoading(false);
           return;
         }
 
-        // Dynamically import mp4box
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const MP4Box = (await import("mp4box")) as any;
 
-        // Fetch the video
-        const res = await fetch(streamUrl, {
-          headers: { "ngrok-skip-browser-warning": "true" },
-        });
-        if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-        const arrayBuffer = await res.arrayBuffer();
-        if (cancelled) return;
-
-        // Set up decoders
+        // Set up video decoder
         s.videoDecoder = new VideoDecoder({
-          output: (frame) => {
-            s.frameQueue.push(frame);
-          },
-          error: (e) => console.error("VideoDecoder error:", e),
+          output: (frame) => { if (!s.cancelled) s.frameQueue.push(frame); else frame.close(); },
+          error: (e) => console.error("VideoDecoder:", e),
         });
 
-        // Audio context (needs user gesture on Tesla)
+        // Set up audio
         s.audioCtx = new AudioContext();
-        s.audioStartTime = 0;
+        s.audioBaseTime = 0;
 
         s.audioDecoder = new AudioDecoder({
           output: (audioData) => {
-            if (!s.audioCtx) { audioData.close(); return; }
-
+            if (s.cancelled || !s.audioCtx) { audioData.close(); return; }
             try {
-              const buffer = s.audioCtx.createBuffer(
-                audioData.numberOfChannels,
-                audioData.numberOfFrames,
-                audioData.sampleRate
-              );
-
+              const buf = s.audioCtx.createBuffer(audioData.numberOfChannels, audioData.numberOfFrames, audioData.sampleRate);
               for (let ch = 0; ch < audioData.numberOfChannels; ch++) {
-                const channelData = new Float32Array(audioData.numberOfFrames);
-                audioData.copyTo(channelData, { planeIndex: ch, format: "f32-planar" });
-                buffer.copyToChannel(channelData, ch);
+                const cd = new Float32Array(audioData.numberOfFrames);
+                audioData.copyTo(cd, { planeIndex: ch, format: "f32-planar" });
+                buf.copyToChannel(cd, ch);
               }
-
-              const source = s.audioCtx.createBufferSource();
-              source.buffer = buffer;
-              source.connect(s.audioCtx.destination);
-
+              const src = s.audioCtx.createBufferSource();
+              src.buffer = buf;
+              src.connect(s.audioCtx.destination);
               const playAt = audioData.timestamp / 1_000_000;
-              if (s.audioStartTime === 0) s.audioStartTime = s.audioCtx.currentTime;
-              source.start(s.audioStartTime + playAt);
-            } catch {
-              // Audio scheduling error — non-fatal
-            }
-
+              if (s.audioBaseTime === 0) s.audioBaseTime = s.audioCtx.currentTime;
+              src.start(s.audioBaseTime + playAt);
+            } catch { /* audio error — non-fatal */ }
             audioData.close();
           },
-          error: (e) => console.error("AudioDecoder error:", e),
+          error: (e) => console.error("AudioDecoder:", e),
         });
 
-        // Demux MP4
-        const mp4boxFile = MP4Box.createFile();
+        // Set up MP4 demuxer
+        const mp4 = MP4Box.createFile();
+        let playbackStarted = false;
 
-        mp4boxFile.onReady = (info: {
-          duration: number;
-          timescale: number;
-          tracks: Array<{
-            id: number;
-            type: string;
-            codec: string;
-            video?: { width: number; height: number };
-            audio?: { sample_rate: number; channel_count: number };
-          }>;
-        }) => {
-          if (cancelled) return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        mp4.onReady = (info: any) => {
+          if (s.cancelled) return;
 
           s.totalDuration = info.duration / info.timescale;
           setDuration(s.totalDuration);
 
-          const videoTrack = info.tracks.find((t) => t.type === "video");
-          const audioTrack = info.tracks.find((t) => t.type === "audio");
+          const vt = info.tracks.find((t: { type: string }) => t.type === "video");
+          const at = info.tracks.find((t: { type: string }) => t.type === "audio");
 
-          if (videoTrack && s.videoDecoder) {
-            // Get avcC description
-            const trak = mp4boxFile.getTrackById(videoTrack.id);
-            let description: Uint8Array | undefined;
-
+          if (vt && s.videoDecoder) {
+            let desc: Uint8Array | undefined;
             try {
+              const trak = mp4.getTrackById(vt.id);
               for (const entry of trak.mdia.minf.stbl.stsd.entries) {
                 const box = entry.avcC || entry.hvcC;
                 if (box) {
                   const stream = new MP4Box.DataStream(undefined, 0, MP4Box.DataStream.BIG_ENDIAN);
                   box.write(stream);
-                  description = new Uint8Array(stream.buffer, 8);
+                  desc = new Uint8Array(stream.buffer, 8);
                   break;
                 }
               }
-            } catch {
-              // description extraction failed
-            }
+            } catch { /* no description */ }
 
-            const config: VideoDecoderConfig = {
-              codec: videoTrack.codec,
-              codedWidth: videoTrack.video?.width,
-              codedHeight: videoTrack.video?.height,
+            const cfg: VideoDecoderConfig = {
+              codec: vt.codec,
+              codedWidth: vt.video?.width,
+              codedHeight: vt.video?.height,
             };
-            if (description) config.description = description;
-
-            s.videoDecoder.configure(config);
-            mp4boxFile.setExtractionOptions(videoTrack.id, "video", { nbSamples: 50 });
+            if (desc) cfg.description = desc;
+            s.videoDecoder.configure(cfg);
+            mp4.setExtractionOptions(vt.id, "video", { nbSamples: 20 });
           }
 
-          if (audioTrack && s.audioDecoder) {
-            // Get esds/audio description
-            const trak = mp4boxFile.getTrackById(audioTrack.id);
+          if (at && s.audioDecoder) {
             let audioDesc: Uint8Array | undefined;
-
             try {
+              const trak = mp4.getTrackById(at.id);
               for (const entry of trak.mdia.minf.stbl.stsd.entries) {
-                const box = entry.esds;
-                if (box) {
+                if (entry.esds) {
                   const stream = new MP4Box.DataStream(undefined, 0, MP4Box.DataStream.BIG_ENDIAN);
-                  box.write(stream);
+                  entry.esds.write(stream);
                   audioDesc = new Uint8Array(stream.buffer, 8);
                   break;
                 }
               }
-            } catch {
-              // audio description extraction failed
-            }
-
-            const audioConfig: AudioDecoderConfig = {
-              codec: audioTrack.codec,
-              sampleRate: audioTrack.audio?.sample_rate || 44100,
-              numberOfChannels: audioTrack.audio?.channel_count || 2,
-            };
-            if (audioDesc) audioConfig.description = audioDesc;
+            } catch { /* no audio desc */ }
 
             try {
-              s.audioDecoder.configure(audioConfig);
-              mp4boxFile.setExtractionOptions(audioTrack.id, "audio", { nbSamples: 50 });
-            } catch {
-              // Audio decode not supported — video only
-            }
+              const acfg: AudioDecoderConfig = {
+                codec: at.codec,
+                sampleRate: at.audio?.sample_rate || 44100,
+                numberOfChannels: at.audio?.channel_count || 2,
+              };
+              if (audioDesc) acfg.description = audioDesc;
+              s.audioDecoder.configure(acfg);
+              mp4.setExtractionOptions(at.id, "audio", { nbSamples: 20 });
+            } catch { /* audio not supported */ }
           }
 
-          mp4boxFile.start();
+          mp4.start();
         };
 
-        mp4boxFile.onSamples = (_trackId: number, type: string, samples: Array<{
-          is_sync: boolean;
-          cts: number;
-          duration: number;
-          timescale: number;
-          data: ArrayBuffer;
-        }>) => {
-          if (cancelled) return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        mp4.onSamples = (_id: number, type: string, samples: any[]) => {
+          if (s.cancelled) return;
 
           for (const sample of samples) {
-            const timestamp = (sample.cts * 1_000_000) / sample.timescale;
+            const ts = (sample.cts * 1_000_000) / sample.timescale;
             const dur = (sample.duration * 1_000_000) / sample.timescale;
 
             if (type === "video" && s.videoDecoder?.state === "configured") {
               s.videoDecoder.decode(new EncodedVideoChunk({
                 type: sample.is_sync ? "key" : "delta",
-                timestamp,
-                duration: dur,
-                data: sample.data,
+                timestamp: ts, duration: dur, data: sample.data,
               }));
             } else if (type === "audio" && s.audioDecoder?.state === "configured") {
               s.audioDecoder.decode(new EncodedAudioChunk({
-                type: "key",
-                timestamp,
-                data: sample.data,
+                type: "key", timestamp: ts, data: sample.data,
               }));
             }
           }
+
+          // Start playback as soon as we have some frames
+          if (!playbackStarted && s.frameQueue.length > 2) {
+            playbackStarted = true;
+            s.startTime = performance.now();
+            s.paused = false;
+            s.audioCtx?.resume();
+            setLoading(false);
+            setPlaying(true);
+            renderLoop();
+          }
         };
 
-        // Feed the buffer to MP4Box
-        (arrayBuffer as ArrayBuffer & { fileStart: number }).fileStart = 0;
-        mp4boxFile.appendBuffer(arrayBuffer);
-        mp4boxFile.flush();
+        // STREAM the video — feed chunks to MP4Box as they arrive
+        const res = await fetch(streamUrl, {
+          headers: { "ngrok-skip-browser-warning": "true" },
+        });
 
-        // Start playback
-        setLoading(false);
-        setPlaying(true);
-        s.startTime = performance.now();
-        s.paused = false;
+        if (!res.ok || !res.body) {
+          throw new Error(`Fetch failed: ${res.status}`);
+        }
 
-        // Resume audio context (needs user gesture, but try)
-        s.audioCtx.resume().catch(() => {});
+        const reader = res.body.getReader();
+        let offset = 0;
 
-        renderLoop();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done || s.cancelled) break;
+
+          // Copy into an ArrayBuffer with fileStart for MP4Box
+          const buf = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+          (buf as ArrayBuffer & { fileStart: number }).fileStart = offset;
+          offset += buf.byteLength;
+          setDownloaded(Math.round(offset / 1024));
+
+          mp4.appendBuffer(buf);
+        }
+
+        mp4.flush();
+
+        // If playback never started (very short video), start now
+        if (!playbackStarted && s.frameQueue.length > 0) {
+          playbackStarted = true;
+          s.startTime = performance.now();
+          s.paused = false;
+          s.audioCtx?.resume();
+          setLoading(false);
+          setPlaying(true);
+          renderLoop();
+        }
       } catch (err) {
-        if (!cancelled) {
+        if (!s.cancelled) {
+          console.error("WasmPlayer error:", err);
           setError(`Failed: ${err instanceof Error ? err.message : err}`);
           setLoading(false);
         }
@@ -291,16 +265,13 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmP
     init();
 
     return () => {
-      cancelled = true;
+      s.cancelled = true;
       cancelAnimationFrame(s.rafId);
       s.frameQueue.forEach((f) => f.close());
       s.frameQueue = [];
       try { s.videoDecoder?.close(); } catch {}
       try { s.audioDecoder?.close(); } catch {}
       try { s.audioCtx?.close(); } catch {}
-      s.videoDecoder = null;
-      s.audioDecoder = null;
-      s.audioCtx = null;
     };
   }, [streamUrl, renderLoop]);
 
@@ -320,14 +291,13 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmP
     }
   };
 
-  const formatTime = (sec: number) => {
+  const fmt = (sec: number) => {
     if (!isFinite(sec)) return "0:00";
     return `${Math.floor(sec / 60)}:${Math.floor(sec % 60).toString().padStart(2, "0")}`;
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "#000", display: "flex", flexDirection: "column" }}>
-      {/* Top bar */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "6px 16px", background: "rgba(3,7,18,0.95)",
@@ -337,9 +307,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmP
           <span style={{ color: "var(--cyan)", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>YaVik</span>
           <span style={{ color: "#6b7280" }}>/</span>
           <span style={{ color: "#e5e7eb", fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
-          <span style={{ color: "#22c55e", fontSize: 10, fontWeight: 700, textTransform: "uppercase", flexShrink: 0 }}>
-            Drive Safe
-          </span>
+          <span style={{ color: "#22c55e", fontSize: 10, fontWeight: 700, textTransform: "uppercase", flexShrink: 0 }}>Drive Safe</span>
         </div>
         <button onClick={onClose} style={{
           padding: "8px 24px", background: "rgba(239,68,68,0.12)", color: "#f87171",
@@ -348,16 +316,13 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmP
         }}>Close</button>
       </div>
 
-      {/* Canvas — pure software decode, no <video> element anywhere */}
       <div style={{ flex: 1, position: "relative", background: "#000", overflow: "hidden" }} onClick={togglePlay}>
-        <canvas ref={canvasRef} style={{
-          width: "100%", height: "100%", objectFit: "contain", display: "block",
-        }} />
+        <canvas ref={canvasRef} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
 
         {loading && (
           <div style={{ position: "absolute", inset: 0, zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.85)" }}>
             <div style={{ color: "var(--cyan)", fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Loading video...</div>
-            <div style={{ color: "#6b7280", fontSize: 13 }}>Downloading and decoding</div>
+            <div style={{ color: "#6b7280", fontSize: 13 }}>{downloaded > 0 ? `${downloaded} KB downloaded` : "Connecting..."}</div>
           </div>
         )}
 
@@ -376,7 +341,6 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmP
         )}
       </div>
 
-      {/* Controls */}
       <div style={{ padding: "8px 16px 12px", background: "rgba(3,7,18,0.95)", borderTop: "1px solid rgba(34,211,238,0.15)", flexShrink: 0 }}>
         <div style={{ width: "100%", height: 4, background: "rgba(75,85,99,0.5)", borderRadius: 2, overflow: "hidden" }}>
           <div style={{ width: `${progress}%`, height: "100%", background: "#FF0000", borderRadius: 2 }} />
@@ -390,7 +354,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmP
               ? <svg width={20} height={20} viewBox="0 0 24 24" fill="#FF0000"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>
               : <svg width={20} height={20} viewBox="0 0 24 24" fill="#FF0000"><path d="M8 5v14l11-7z" /></svg>}
           </button>
-          <span style={{ color: "#9ca3af", fontSize: 13, fontFamily: "monospace" }}>{formatTime(currentTime)} / {formatTime(duration)}</span>
+          <span style={{ color: "#9ca3af", fontSize: 13, fontFamily: "monospace" }}>{fmt(currentTime)} / {fmt(duration)}</span>
         </div>
       </div>
     </div>
