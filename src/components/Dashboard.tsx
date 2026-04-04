@@ -185,51 +185,51 @@ export default function Dashboard() {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 20,
-                  padding: "20px 28px",
-                  background: "linear-gradient(135deg, rgba(255,0,0,0.12) 0%, rgba(17,24,39,0.8) 50%, rgba(255,0,0,0.08) 100%)",
-                  border: "1px solid rgba(255,0,0,0.3)",
-                  borderRadius: 20,
+                  gap: 28,
+                  padding: "36px 40px",
+                  background: "linear-gradient(135deg, rgba(255,0,0,0.15) 0%, rgba(17,24,39,0.85) 50%, rgba(255,0,0,0.1) 100%)",
+                  border: "2px solid rgba(255,0,0,0.35)",
+                  borderRadius: 24,
                   cursor: "pointer",
                   width: "100%",
-                  maxWidth: 480,
+                  maxWidth: 700,
                   position: "relative",
                   overflow: "hidden",
                   transform: "translateZ(0)",
                 }}
               >
                 {/* Corner accents */}
-                <div style={{ position: "absolute", top: 0, left: 0, width: 40, height: 40, borderTop: "2px solid rgba(255,0,0,0.5)", borderLeft: "2px solid rgba(255,0,0,0.5)", borderRadius: "24px 0 0 0" }} />
-                <div style={{ position: "absolute", bottom: 0, right: 0, width: 40, height: 40, borderBottom: "2px solid rgba(255,0,0,0.5)", borderRight: "2px solid rgba(255,0,0,0.5)", borderRadius: "0 0 24px 0" }} />
+                <div style={{ position: "absolute", top: 0, left: 0, width: 50, height: 50, borderTop: "3px solid rgba(255,0,0,0.5)", borderLeft: "3px solid rgba(255,0,0,0.5)", borderRadius: "24px 0 0 0" }} />
+                <div style={{ position: "absolute", bottom: 0, right: 0, width: 50, height: 50, borderBottom: "3px solid rgba(255,0,0,0.5)", borderRight: "3px solid rgba(255,0,0,0.5)", borderRadius: "0 0 24px 0" }} />
 
                 <div
                   style={{
-                    width: 56, height: 56, borderRadius: 14,
+                    width: 80, height: 80, borderRadius: 20,
                     background: "#FF0000",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     flexShrink: 0,
                   }}
                 >
-                  <svg width={28} height={28} viewBox="0 0 24 24" fill="#fff">
+                  <svg width={40} height={40} viewBox="0 0 24 24" fill="#fff">
                     <path d="M8 5v14l11-7z" />
                   </svg>
                 </div>
 
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", marginBottom: 2 }}>YouTube</div>
-                  <div style={{ fontSize: 13, color: "#d1d5db" }}>Search, browse & watch while you drive</div>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: "#fff", marginBottom: 4 }}>YouTube</div>
+                  <div style={{ fontSize: 16, color: "#d1d5db" }}>Search, browse & watch while you drive</div>
                   <div style={{
-                    display: "inline-block", marginTop: 8,
-                    padding: "4px 12px",
+                    display: "inline-block", marginTop: 10,
+                    padding: "6px 16px",
                     background: "rgba(255,0,0,0.15)", border: "1px solid rgba(255,0,0,0.3)",
                     borderRadius: 999, color: "#f87171",
-                    fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em",
+                    fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em",
                   }}>
                     Works while driving
                   </div>
                 </div>
 
-                <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth={2}>
+                <svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth={2}>
                   <path d="M9 18l6-6-6-6" />
                 </svg>
               </div>
@@ -239,28 +239,28 @@ export default function Dashboard() {
                 className="press-effect"
                 onClick={() => setViewer({ type: "einthusan-browse" })}
                 style={{
-                  display: "flex", alignItems: "center", gap: 20, padding: "20px 28px",
-                  background: "linear-gradient(135deg, rgba(229,9,20,0.12) 0%, rgba(17,24,39,0.8) 50%, rgba(229,9,20,0.08) 100%)",
-                  border: "1px solid rgba(229,9,20,0.3)", borderRadius: 20, cursor: "pointer",
-                  width: "100%", maxWidth: 480, position: "relative", overflow: "hidden",
+                  display: "flex", alignItems: "center", gap: 28, padding: "36px 40px",
+                  background: "linear-gradient(135deg, rgba(229,9,20,0.15) 0%, rgba(17,24,39,0.85) 50%, rgba(229,9,20,0.1) 100%)",
+                  border: "2px solid rgba(229,9,20,0.35)", borderRadius: 24, cursor: "pointer",
+                  width: "100%", maxWidth: 700, position: "relative", overflow: "hidden",
                 }}
               >
-                <div style={{ position: "absolute", top: 0, left: 0, width: 40, height: 40, borderTop: "2px solid rgba(229,9,20,0.5)", borderLeft: "2px solid rgba(229,9,20,0.5)", borderRadius: "20px 0 0 0" }} />
-                <div style={{ position: "absolute", bottom: 0, right: 0, width: 40, height: 40, borderBottom: "2px solid rgba(229,9,20,0.5)", borderRight: "2px solid rgba(229,9,20,0.5)", borderRadius: "0 0 20px 0" }} />
+                <div style={{ position: "absolute", top: 0, left: 0, width: 50, height: 50, borderTop: "3px solid rgba(229,9,20,0.5)", borderLeft: "3px solid rgba(229,9,20,0.5)", borderRadius: "24px 0 0 0" }} />
+                <div style={{ position: "absolute", bottom: 0, right: 0, width: 50, height: 50, borderBottom: "3px solid rgba(229,9,20,0.5)", borderRight: "3px solid rgba(229,9,20,0.5)", borderRadius: "0 0 24px 0" }} />
 
-                <div style={{ width: 56, height: 56, borderRadius: 14, background: "#E50914", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <span style={{ color: "#fff", fontWeight: 800, fontSize: 22 }}>E</span>
+                <div style={{ width: 80, height: 80, borderRadius: 20, background: "#E50914", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <span style={{ color: "#fff", fontWeight: 800, fontSize: 32 }}>E</span>
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", marginBottom: 2 }}>Einthusan</div>
-                  <div style={{ fontSize: 13, color: "#d1d5db" }}>Tamil, Hindi, Telugu & more movies</div>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: "#fff", marginBottom: 4 }}>Einthusan</div>
+                  <div style={{ fontSize: 16, color: "#d1d5db" }}>Tamil, Hindi, Telugu & more movies</div>
                   <div style={{
-                    display: "inline-block", marginTop: 8, padding: "4px 12px",
+                    display: "inline-block", marginTop: 10, padding: "6px 16px",
                     background: "rgba(229,9,20,0.15)", border: "1px solid rgba(229,9,20,0.3)",
-                    borderRadius: 999, color: "#f87171", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em",
+                    borderRadius: 999, color: "#f87171", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em",
                   }}>Works while driving</div>
                 </div>
-                <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth={2}>
+                <svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth={2}>
                   <path d="M9 18l6-6-6-6" />
                 </svg>
               </div>
