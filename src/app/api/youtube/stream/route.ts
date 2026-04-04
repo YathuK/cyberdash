@@ -5,16 +5,16 @@ export async function GET(request: NextRequest) {
   const videoId = request.nextUrl.searchParams.get("v");
 
   if (!videoId) {
-    return new Response("Missing video ID", { status: 400 });
+    return Response.json({ error: "Missing video ID" }, { status: 400 });
   }
 
   try {
     const yt = await getInnertube();
-    const info = await yt.getBasicInfo(videoId);
+    const info = await yt.getInfo(videoId);
 
     const streamingData = info.streaming_data;
     if (!streamingData) {
-      return new Response("No streaming data", { status: 404 });
+      return Response.json({ error: "This video can't be played — it may be age-restricted, private, or a live stream" }, { status: 404 });
     }
 
     // Find best MP4 combined format (video + audio)
