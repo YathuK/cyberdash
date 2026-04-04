@@ -43,6 +43,7 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
 
   // Feed & subscriptions
   const [feedVideos, setFeedVideos] = useState<Video[]>([]);
+  const [subVideos, setSubVideos] = useState<Video[]>([]);
   const [subscriptions, setSubscriptions] = useState<Channel[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [channelVideos, setChannelVideos] = useState<Video[]>([]);
@@ -68,7 +69,7 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
     try {
       const res = await fetch(`${PROXY_URL}/yt/subscriptions`);
       const data = await res.json();
-      if (data.channels?.length > 0) setSubscriptions(data.channels);
+      if (data.videos?.length > 0) setSubVideos(data.videos);
     } catch {}
   };
 
@@ -313,9 +314,9 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
             )}
           </>
         ) : ytLoggedIn && tab === "subscriptions" ? (
-          /* Subscriptions */
-          subscriptions.length > 0 ? (
-            <ChannelGrid channels={subscriptions} onSelect={openChannel} />
+          /* Subscriptions feed */
+          subVideos.length > 0 ? (
+            <VideoGrid videos={subVideos} />
           ) : (
             <div style={{ textAlign: "center", padding: "40px 0", color: "#6b7280" }}>Loading subscriptions...</div>
           )
