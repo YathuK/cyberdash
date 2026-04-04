@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 
-const PROXY_URL = "https://received-void-obtaining-paperback.trycloudflare.com";
+const PROXY_URL = "https://yavik-proxy.ineffableconstruction.ca";
 
 const LANGUAGES = [
   { code: "tamil", label: "Tamil" },

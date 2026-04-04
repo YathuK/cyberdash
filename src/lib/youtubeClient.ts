@@ -1,6 +1,6 @@
 // YouTube stream fetcher
 
-const PROXY_URL = "https://received-void-obtaining-paperback.trycloudflare.com";
+const PROXY_URL = "https://yavik-proxy.ineffableconstruction.ca";
 
 export interface StreamResult {
   stream?: { url: string; audioUrl?: string; mimeType: string; quality: string };
