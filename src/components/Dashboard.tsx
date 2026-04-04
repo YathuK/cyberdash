@@ -6,6 +6,7 @@ import AppViewer from "./AppViewer";
 import CanvasPlayer from "./CanvasPlayer";
 import YouTubeBrowser from "./YouTubeBrowser";
 import EinthusanBrowser from "./EinthusanBrowser";
+import PlutoBrowser from "./PlutoBrowser";
 import WasmPlayerDirect from "./WasmPlayerDirect";
 import { getSessionId } from "@/lib/session";
 
@@ -23,7 +24,9 @@ type ViewerState =
   | { type: "youtube"; videoId: string; title: string }
   | { type: "youtube-browse" }
   | { type: "einthusan-browse" }
-  | { type: "einthusan-play"; title: string; streamUrl: string };
+  | { type: "einthusan-play"; title: string; streamUrl: string }
+  | { type: "pluto-browse" }
+  | { type: "pluto-play"; title: string; streamUrl: string };
 
 export default function Dashboard() {
   const [apps, setApps] = useState<App[]>([]);
@@ -60,6 +63,12 @@ export default function Dashboard() {
       )}
       {viewer?.type === "einthusan-play" && (
         <WasmPlayerDirect title={viewer.title} streamUrl={viewer.streamUrl} onClose={() => setViewer({ type: "einthusan-browse" })} />
+      )}
+      {viewer?.type === "pluto-browse" && (
+        <PlutoBrowser onPlay={(_id, title, url) => setViewer({ type: "pluto-play", title, streamUrl: url })} onClose={() => setViewer(null)} />
+      )}
+      {viewer?.type === "pluto-play" && (
+        <WasmPlayerDirect title={viewer.title} streamUrl={viewer.streamUrl} onClose={() => setViewer({ type: "pluto-browse" })} />
       )}
 
       <div className="noise" style={{ width: "100vw", height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column", position: "relative" }}>
@@ -148,6 +157,36 @@ export default function Dashboard() {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 4, letterSpacing: "-0.02em" }}>Einthusan</div>
                   <div style={{ fontSize: 15, color: "rgba(209,213,219,0.8)" }}>Tamil, Hindi, Telugu & more movies</div>
+                  <div style={{
+                    display: "inline-block", marginTop: 10, padding: "5px 14px",
+                    background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.25)",
+                    borderRadius: 999, color: "#22c55e", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em",
+                  }}>Works while driving</div>
+                </div>
+                <svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth={2}><path d="M9 18l6-6-6-6" /></svg>
+              </div>
+
+              {/* ===== PLUTO TV ===== */}
+              <div
+                className="press-effect"
+                onClick={() => setViewer({ type: "pluto-browse" })}
+                style={{
+                  display: "flex", alignItems: "center", gap: 28, padding: "36px 40px",
+                  background: "linear-gradient(135deg, rgba(99,102,241,0.06) 0%, rgba(15,23,42,0.7) 40%, rgba(99,102,241,0.04) 100%)",
+                  border: "1px solid rgba(99,102,241,0.2)",
+                  borderRadius: 24, cursor: "pointer", width: "100%",
+                  position: "relative", overflow: "hidden", transform: "translateZ(0)",
+                }}
+              >
+                <div style={{ position: "absolute", top: 0, left: 0, width: 60, height: 60, borderTop: "2px solid rgba(99,102,241,0.3)", borderLeft: "2px solid rgba(99,102,241,0.3)", borderRadius: "24px 0 0 0" }} />
+                <div style={{ position: "absolute", bottom: 0, right: 0, width: 60, height: 60, borderBottom: "2px solid rgba(99,102,241,0.3)", borderRight: "2px solid rgba(99,102,241,0.3)", borderRadius: "0 0 24px 0" }} />
+
+                <div style={{ width: 76, height: 76, borderRadius: 20, background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <span style={{ color: "#fff", fontWeight: 800, fontSize: 28 }}>P</span>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", marginBottom: 4, letterSpacing: "-0.02em" }}>Pluto TV</div>
+                  <div style={{ fontSize: 15, color: "rgba(209,213,219,0.8)" }}>Free movies & TV shows — no login needed</div>
                   <div style={{
                     display: "inline-block", marginTop: 10, padding: "5px 14px",
                     background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.25)",
