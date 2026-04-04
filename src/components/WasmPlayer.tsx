@@ -227,25 +227,34 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
         mp4.onError = (e: string) => setDecoderState(`MP4 ERROR: ${e}`);
 
         // Stream and play — feed chunks to MP4Box as they arrive
-        // Set audio to separate audio stream (higher quality) or same URL
+        setStatus("Connecting...");
+        const res = await fetch(streamUrl);
+        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+        // Set audio source — only if it's a different URL (YouTube separate audio)
+        // For Pluto/same-URL streams, audio is already in the MP4, so use blob later
         const audio = audioRef.current;
-        if (audio) {
-          audio.src = audioStreamUrl || streamUrl;
+        const isSeperateAudio = audioStreamUrl && audioStreamUrl !== streamUrl;
+        if (audio && isSeperateAudio) {
+          audio.src = audioStreamUrl;
           audio.load();
         }
 
         setStatus("Buffering...");
-        const res = await fetch(streamUrl);
-        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-
         const reader = res.body.getReader();
         let offset = 0;
         const contentLength = parseInt(res.headers.get("content-length") || "0");
         const allChunks: Uint8Array[] = [];
+        let firstChunkTime = 0;
 
         while (true) {
           const { done, value } = await reader.read();
           if (done || s.cancelled) break;
+
+          if (!firstChunkTime) {
+            firstChunkTime = Date.now();
+            setStatus("Receiving video...");
+          }
 
           allChunks.push(new Uint8Array(value));
 
@@ -253,10 +262,20 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
           buf.fileStart = offset;
           offset += buf.byteLength;
 
-          const pct = contentLength > 0 ? Math.round((offset / contentLength) * 100) : 0;
-          if (!s.started) setStatus(`Buffering... ${pct}%`);
+          const kb = Math.round(offset / 1024);
+          const pct = contentLength > 0 ? ` (${Math.round((offset / contentLength) * 100)}%)` : "";
+          if (!s.started) setStatus(`Buffering... ${kb} KB${pct}`);
 
-          try { mp4.appendBuffer(buf); } catch {}
+          try { mp4.appendBuffer(buf); } catch (e) {
+            console.warn("[WasmPlayer] appendBuffer error:", e);
+          }
+
+          // For streams without separate audio, set audio from blob once we have enough data
+          if (!isSeperateAudio && audio && !audio.src && offset > 100000) {
+            const blob = new Blob(allChunks, { type: "video/mp4" });
+            audio.src = URL.createObjectURL(blob);
+            audio.load();
+          }
         }
 
         try { mp4.flush(); } catch {}

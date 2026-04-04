@@ -14,7 +14,6 @@ export default function WasmPlayerDirect({ title, streamUrl, onClose }: Props) {
       videoId=""
       title={title}
       streamUrl={streamUrl}
-      audioStreamUrl={streamUrl}
       onClose={onClose}
     />
   );
