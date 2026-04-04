@@ -55,16 +55,24 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) { s.rafId = requestAnimationFrame(renderLoop); return; }
 
-    // Simple wall clock timing — microseconds since playback started
-    const elapsed = (performance.now() - s.startTime) * 1000;
+    // Sync to audio element time — this keeps audio and video locked together
+    const audio = audioRef.current;
+    let elapsedUs: number;
 
-    // Drop frames that are too late
-    while (s.frameQueue.length > 1 && s.frameQueue[0].timestamp < elapsed - 100000) {
+    if (audio && audio.currentTime > 0 && !audio.paused) {
+      elapsedUs = audio.currentTime * 1_000_000;
+    } else {
+      // Fallback to wall clock if audio not playing yet
+      elapsedUs = (performance.now() - s.startTime) * 1000;
+    }
+
+    // Drop frames that are too late (more than 200ms behind)
+    while (s.frameQueue.length > 1 && s.frameQueue[0].timestamp < elapsedUs - 200000) {
       s.frameQueue.shift()!.close();
     }
 
     // Draw the next frame if it's time
-    if (s.frameQueue.length > 0 && s.frameQueue[0].timestamp <= elapsed) {
+    if (s.frameQueue.length > 0 && s.frameQueue[0].timestamp <= elapsedUs) {
       const frame = s.frameQueue.shift()!;
       if (canvas.width !== frame.displayWidth) canvas.width = frame.displayWidth;
       if (canvas.height !== frame.displayHeight) canvas.height = frame.displayHeight;
@@ -73,7 +81,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
       s.framesDrawn++;
       setDrawnCount(s.framesDrawn);
 
-      const sec = elapsed / 1_000_000;
+      const sec = elapsedUs / 1_000_000;
       setCurrentTime(sec);
       if (s.totalDuration > 0) setProgress((sec / s.totalDuration) * 100);
     }
@@ -88,17 +96,21 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     s.startTime = performance.now();
     s.paused = false;
 
-    // Start audio
-    const audio = audioRef.current;
-    if (audio) {
-      audio.currentTime = 0;
-      audio.play().catch(() => {});
-    }
-
     setLoading(false);
     setPlaying(true);
     setDecoderState(prev => prev + " | PLAYING");
+
+    // Start render loop first — audio starts after first frame draws
     renderLoop();
+
+    // Small delay to let first frames render, then start audio in sync
+    setTimeout(() => {
+      const audio = audioRef.current;
+      if (audio) {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+      }
+    }, 150);
   }, [renderLoop]);
 
   useEffect(() => {
