@@ -23,6 +23,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
     totalDuration: 0,
     cancelled: false,
     started: false,
+    framesDrawn: 0,
   });
 
   const [playing, setPlaying] = useState(false);
@@ -33,7 +34,10 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
   const [duration, setDuration] = useState(0);
   const [status, setStatus] = useState("Connecting...");
   const [frameCount, setFrameCount] = useState(0);
+  const [drawnCount, setDrawnCount] = useState(0);
   const [decoderState, setDecoderState] = useState("init");
+  const [seeking, setSeeking] = useState(false);
+  const seekBarRef = useRef<HTMLDivElement>(null);
 
   const renderLoop = useCallback(() => {
     const s = stateRef.current;
@@ -43,22 +47,23 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) { s.rafId = requestAnimationFrame(renderLoop); return; }
 
-    // Sync to audio element time if available, otherwise use wall clock
-    const audio = audioRef.current;
-    const elapsed = audio && !audio.paused && audio.currentTime > 0
-      ? audio.currentTime * 1_000_000  // microseconds from audio time
-      : (performance.now() - s.startTime) * 1000;
+    // Simple wall clock timing — microseconds since playback started
+    const elapsed = (performance.now() - s.startTime) * 1000;
 
-    while (s.frameQueue.length > 1 && s.frameQueue[0].timestamp < elapsed) {
+    // Drop frames that are too late
+    while (s.frameQueue.length > 1 && s.frameQueue[0].timestamp < elapsed - 100000) {
       s.frameQueue.shift()!.close();
     }
 
+    // Draw the next frame if it's time
     if (s.frameQueue.length > 0 && s.frameQueue[0].timestamp <= elapsed) {
       const frame = s.frameQueue.shift()!;
       if (canvas.width !== frame.displayWidth) canvas.width = frame.displayWidth;
       if (canvas.height !== frame.displayHeight) canvas.height = frame.displayHeight;
       ctx.drawImage(frame, 0, 0);
       frame.close();
+      s.framesDrawn++;
+      setDrawnCount(s.framesDrawn);
 
       const sec = elapsed / 1_000_000;
       setCurrentTime(sec);
@@ -75,14 +80,16 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
     s.startTime = performance.now();
     s.paused = false;
 
-    // Start audio element
+    // Start audio
     const audio = audioRef.current;
     if (audio) {
+      audio.currentTime = 0;
       audio.play().catch(() => {});
     }
 
     setLoading(false);
     setPlaying(true);
+    setDecoderState(prev => prev + " | PLAYING");
     renderLoop();
   }, [renderLoop]);
 
@@ -90,6 +97,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
     const s = stateRef.current;
     s.cancelled = false;
     s.started = false;
+    s.framesDrawn = 0;
 
     async function init() {
       try {
@@ -111,11 +119,13 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
             totalFrames++;
             setFrameCount(totalFrames);
             s.frameQueue.push(frame);
-            if (s.frameQueue.length >= 5 && !s.started) startPlayback();
+            // Start after 5 frames decoded
+            if (s.frameQueue.length >= 5 && !s.started) {
+              startPlayback();
+            }
           },
           error: (e) => {
-            console.error("[WasmPlayer] VDec:", e);
-            setDecoderState(`error: ${e}`);
+            setDecoderState(`DECODE ERROR: ${e}`);
           },
         });
 
@@ -145,24 +155,31 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
               }
             } catch { /* no desc */ }
 
-            const cfg: VideoDecoderConfig = { codec: vt.codec, codedWidth: vt.video?.width || 640, codedHeight: vt.video?.height || 360 };
+            const cfg: VideoDecoderConfig = {
+              codec: vt.codec,
+              codedWidth: vt.video?.width || 640,
+              codedHeight: vt.video?.height || 360,
+            };
             if (desc) cfg.description = desc;
+
             try {
               s.videoDecoder.configure(cfg);
-              setDecoderState(`configured: ${vt.codec} ${vt.video?.width}x${vt.video?.height}`);
-            } catch (e) {
-              setDecoderState(`cfg fail: ${e}`);
+              setDecoderState(`OK: ${vt.codec} ${vt.video?.width}x${vt.video?.height}`);
+            } catch {
               try {
-                s.videoDecoder.configure({ codec: vt.codec, codedWidth: vt.video?.width || 640, codedHeight: vt.video?.height || 360 });
-                setDecoderState(`configured (no desc): ${vt.codec}`);
+                delete cfg.description;
+                s.videoDecoder.configure(cfg);
+                setDecoderState(`OK (no desc): ${vt.codec}`);
               } catch (e2) {
-                setDecoderState(`cfg fail2: ${e2}`);
+                setDecoderState(`FAIL: ${e2}`);
               }
             }
+
             mp4.setExtractionOptions(vt.id, "video", { nbSamples: 100 });
+          } else {
+            setDecoderState("NO VIDEO TRACK");
           }
 
-          // We DON'T extract audio from MP4 — the <audio> element handles it
           mp4.start();
         };
 
@@ -183,6 +200,8 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
           }
         };
 
+        mp4.onError = (e: string) => setDecoderState(`MP4 ERROR: ${e}`);
+
         setStatus("Buffering...");
         const res = await fetch(streamUrl);
         if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
@@ -199,7 +218,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
           offset += buf.byteLength;
           if (!s.started) setStatus(`Buffering... ${Math.round(offset / 1024)} KB`);
 
-          try { mp4.appendBuffer(buf); } catch { /* append error */ }
+          try { mp4.appendBuffer(buf); } catch {}
         }
 
         try { mp4.flush(); } catch {}
@@ -247,27 +266,16 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
     }
   };
 
-  const [seeking, setSeeking] = useState(false);
-  const seekBarRef = useRef<HTMLDivElement>(null);
-
   const seekTo = (clientX: number) => {
     const bar = seekBarRef.current;
     const audio = audioRef.current;
     const s = stateRef.current;
     if (!bar || !s.totalDuration) return;
-
     const rect = bar.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const targetTime = pct * s.totalDuration;
-
-    // Seek audio element
-    if (audio && isFinite(targetTime)) {
-      audio.currentTime = targetTime;
-    }
-
-    // Reset video timing to match
+    if (audio && isFinite(targetTime)) audio.currentTime = targetTime;
     s.startTime = performance.now() - targetTime * 1000;
-
     setProgress(pct * 100);
     setCurrentTime(targetTime);
   };
@@ -278,18 +286,13 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     seekTo(clientX);
   };
-
   const onSeekMove = (e: React.MouseEvent | React.TouchEvent) => {
     if (!seeking) return;
     e.stopPropagation();
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     seekTo(clientX);
   };
-
-  const onSeekEnd = (e: React.MouseEvent | React.TouchEvent) => {
-    e.stopPropagation();
-    setSeeking(false);
-  };
+  const onSeekEnd = (e: React.MouseEvent | React.TouchEvent) => { e.stopPropagation(); setSeeking(false); };
 
   const fmt = (sec: number) => !isFinite(sec) ? "0:00" : `${Math.floor(sec / 60)}:${Math.floor(sec % 60).toString().padStart(2, "0")}`;
 
@@ -313,15 +316,14 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
         }}>Close</button>
       </div>
 
-      {/* Hidden audio element — Tesla allows audio while driving */}
       <audio ref={audioRef} src={streamUrl} preload="auto" style={{ display: "none" }} />
 
-      {/* Debug bar */}
+      {/* Debug */}
       <div style={{
         padding: "2px 12px", background: "rgba(0,0,0,0.9)", color: "#facc15",
-        fontSize: 10, fontFamily: "monospace", borderBottom: "1px solid #facc15", flexShrink: 0,
+        fontSize: 10, fontFamily: "monospace", flexShrink: 0,
       }}>
-        decoder={decoderState} | frames={frameCount} | queue={stateRef.current.frameQueue.length} | started={stateRef.current.started ? "Y" : "N"}
+        {decoderState} | decoded={frameCount} drawn={drawnCount} queue={stateRef.current.frameQueue.length}
       </div>
 
       <div style={{ flex: 1, position: "relative", background: "#000", overflow: "hidden" }} onClick={togglePlay}>
@@ -350,41 +352,18 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
       </div>
 
       <div style={{ padding: "8px 16px 12px", background: "rgba(3,7,18,0.95)", borderTop: "1px solid rgba(34,211,238,0.15)", flexShrink: 0 }}>
-        {/* Draggable seek bar — large touch target */}
-        <div
-          ref={seekBarRef}
-          onMouseDown={onSeekStart}
-          onMouseMove={onSeekMove}
-          onMouseUp={onSeekEnd}
-          onMouseLeave={onSeekEnd}
-          onTouchStart={onSeekStart}
-          onTouchMove={onSeekMove}
-          onTouchEnd={onSeekEnd}
-          style={{
-            width: "100%", height: 44, display: "flex", alignItems: "center",
-            cursor: "pointer", touchAction: "none", position: "relative",
-          }}
-        >
-          {/* Track */}
+        <div ref={seekBarRef} onMouseDown={onSeekStart} onMouseMove={onSeekMove} onMouseUp={onSeekEnd} onMouseLeave={onSeekEnd}
+          onTouchStart={onSeekStart} onTouchMove={onSeekMove} onTouchEnd={onSeekEnd}
+          style={{ width: "100%", height: 44, display: "flex", alignItems: "center", cursor: "pointer", touchAction: "none", position: "relative" }}>
           <div style={{ width: "100%", height: 6, background: "rgba(75,85,99,0.5)", borderRadius: 3, position: "relative", overflow: "visible" }}>
-            {/* Filled */}
             <div style={{ width: `${progress}%`, height: "100%", background: "#FF0000", borderRadius: 3 }} />
-            {/* Thumb */}
             <div style={{
-              position: "absolute",
-              top: "50%",
-              left: `${progress}%`,
-              transform: "translate(-50%, -50%)",
-              width: seeking ? 20 : 14,
-              height: seeking ? 20 : 14,
-              borderRadius: 999,
-              background: "#FF0000",
-              border: "2px solid #fff",
-              transition: seeking ? "none" : "width 0.15s, height 0.15s",
+              position: "absolute", top: "50%", left: `${progress}%`, transform: "translate(-50%, -50%)",
+              width: seeking ? 20 : 14, height: seeking ? 20 : 14,
+              borderRadius: 999, background: "#FF0000", border: "2px solid #fff",
             }} />
           </div>
         </div>
-
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} style={{
             width: 48, height: 48, minHeight: 48, minWidth: 48, display: "flex", alignItems: "center", justifyContent: "center",
