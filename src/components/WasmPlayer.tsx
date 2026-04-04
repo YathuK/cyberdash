@@ -202,25 +202,52 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
 
         mp4.onError = (e: string) => setDecoderState(`MP4 ERROR: ${e}`);
 
-        setStatus("Buffering...");
+        // Download the ENTIRE video first so it plays even if WiFi drops
+        setStatus("Downloading video...");
         const res = await fetch(streamUrl);
         if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
         const reader = res.body.getReader();
-        let offset = 0;
+        const chunks: Uint8Array[] = [];
+        let totalBytes = 0;
+
+        // Get content-length for progress
+        const contentLength = parseInt(res.headers.get("content-length") || "0");
 
         while (true) {
           const { done, value } = await reader.read();
           if (done || s.cancelled) break;
+          chunks.push(value);
+          totalBytes += value.byteLength;
 
-          const buf = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer & { fileStart: number };
-          buf.fileStart = offset;
-          offset += buf.byteLength;
-          if (!s.started) setStatus(`Buffering... ${Math.round(offset / 1024)} KB`);
-
-          try { mp4.appendBuffer(buf); } catch {}
+          const pct = contentLength > 0 ? Math.round((totalBytes / contentLength) * 100) : 0;
+          setStatus(`Downloading... ${Math.round(totalBytes / 1024)} KB${contentLength > 0 ? ` (${pct}%)` : ""}`);
         }
 
+        if (s.cancelled) return;
+
+        // Combine all chunks into one buffer
+        setStatus("Processing video...");
+        const fullBuffer = new Uint8Array(totalBytes);
+        let pos = 0;
+        for (const chunk of chunks) {
+          fullBuffer.set(chunk, pos);
+          pos += chunk.byteLength;
+        }
+
+        // Create a blob URL for the audio element — fully offline
+        const audioBlob = new Blob([fullBuffer], { type: "video/mp4" });
+        const audioBlobUrl = URL.createObjectURL(audioBlob);
+        const audio = audioRef.current;
+        if (audio) {
+          audio.src = audioBlobUrl;
+          audio.load();
+        }
+
+        // Feed entire buffer to MP4Box for video decoding
+        const ab = fullBuffer.buffer as ArrayBuffer & { fileStart: number };
+        ab.fileStart = 0;
+        try { mp4.appendBuffer(ab); } catch {}
         try { mp4.flush(); } catch {}
 
         if (!s.started && s.frameQueue.length > 0) startPlayback();
@@ -316,7 +343,8 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
         }}>Close</button>
       </div>
 
-      <audio ref={audioRef} src={streamUrl} preload="auto" style={{ display: "none" }} />
+      {/* Audio element — src set from blob after download completes */}
+      <audio ref={audioRef} preload="auto" style={{ display: "none" }} />
 
       {/* Debug */}
       <div style={{
