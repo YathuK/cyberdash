@@ -272,7 +272,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
 
           // For streams without separate audio, set audio from blob once we have enough data
           if (!isSeperateAudio && audio && !audio.src && offset > 100000) {
-            const blob = new Blob(allChunks, { type: "video/mp4" });
+            const blob = new Blob(allChunks as BlobPart[], { type: "video/mp4" });
             audio.src = URL.createObjectURL(blob);
             audio.load();
           }
