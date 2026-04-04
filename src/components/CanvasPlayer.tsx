@@ -17,7 +17,7 @@ const ERROR_CODES: Record<number, string> = {
 
 export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const animFrameRef = useRef<number>(0);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -48,58 +48,32 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
   }, []);
 
   useEffect(() => {
-    const video = document.createElement("video");
-    video.crossOrigin = "anonymous";
-    video.playsInline = true;
-    video.preload = "auto";
-    video.muted = false;
+    const video = videoRef.current;
+    if (!video) return;
 
-    // Position the video element inside the DOM but visually hidden
-    // Using clip instead of display:none so the browser still decodes frames
-    video.style.position = "absolute";
-    video.style.width = "1px";
-    video.style.height = "1px";
-    video.style.clip = "rect(0,0,0,0)";
-    video.style.clipPath = "inset(50%)";
-    video.style.overflow = "hidden";
-    video.style.whiteSpace = "nowrap";
-
-    // Append to the canvas container so it's part of the visible DOM tree
-    const container = canvasRef.current?.parentElement;
-    if (container) {
-      container.appendChild(video);
-    } else {
-      document.body.appendChild(video);
-    }
-    videoRef.current = video;
-
-    const streamUrl = `/api/youtube/stream?v=${videoId}`;
-
-    video.onloadedmetadata = () => {
+    const onLoadedMetadata = () => {
       setDuration(video.duration);
       setLoading(false);
     };
 
-    video.oncanplay = () => {
-      setLoading(false);
-    };
+    const onCanPlay = () => setLoading(false);
 
-    video.ontimeupdate = () => {
+    const onTimeUpdate = () => {
       setCurrentTime(video.currentTime);
       if (video.duration && isFinite(video.duration)) {
         setProgress((video.currentTime / video.duration) * 100);
       }
     };
 
-    video.onplay = () => {
+    const onPlay = () => {
       setPlaying(true);
       drawFrame();
     };
 
-    video.onpause = () => setPlaying(false);
-    video.onended = () => setPlaying(false);
+    const onPause = () => setPlaying(false);
+    const onEnded = () => setPlaying(false);
 
-    video.onerror = () => {
+    const onError = () => {
       const code = video.error?.code || 0;
       const msg = ERROR_CODES[code] || video.error?.message || "Unknown error";
       console.error("Video error:", code, msg, video.error);
@@ -107,26 +81,34 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
       setLoading(false);
     };
 
-    // Load the video
-    video.src = streamUrl;
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
+    video.addEventListener("canplay", onCanPlay);
+    video.addEventListener("timeupdate", onTimeUpdate);
+    video.addEventListener("play", onPlay);
+    video.addEventListener("pause", onPause);
+    video.addEventListener("ended", onEnded);
+    video.addEventListener("error", onError);
+
+    video.src = `/api/youtube/stream?v=${videoId}`;
     video.load();
 
-    // Try to autoplay after a short delay
     const playTimer = setTimeout(() => {
-      video.play().catch(() => {
-        // Autoplay blocked — user needs to tap play
-        setLoading(false);
-      });
-    }, 500);
+      video.play().catch(() => setLoading(false));
+    }, 300);
 
     return () => {
       clearTimeout(playTimer);
       cancelAnimationFrame(animFrameRef.current);
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      video.removeEventListener("canplay", onCanPlay);
+      video.removeEventListener("timeupdate", onTimeUpdate);
+      video.removeEventListener("play", onPlay);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("ended", onEnded);
+      video.removeEventListener("error", onError);
       video.pause();
       video.removeAttribute("src");
       video.load();
-      video.remove();
-      videoRef.current = null;
     };
   }, [videoId, drawFrame]);
 
@@ -150,6 +132,19 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
     video.currentTime = pct * video.duration;
   };
 
+  const retry = () => {
+    setError(null);
+    setLoading(true);
+    const video = videoRef.current;
+    if (video) {
+      video.src = `/api/youtube/stream?v=${videoId}`;
+      video.load();
+      setTimeout(() => {
+        video.play().catch(() => setLoading(false));
+      }, 300);
+    }
+  };
+
   const formatTime = (seconds: number) => {
     if (!isFinite(seconds)) return "0:00";
     const m = Math.floor(seconds / 60);
@@ -166,7 +161,6 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
         background: "#000",
         display: "flex",
         flexDirection: "column",
-        transform: "translateZ(0)",
       }}
     >
       {/* Top bar */}
@@ -210,24 +204,44 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
         </button>
       </div>
 
-      {/* Canvas video display */}
+      {/* Video area */}
       <div
         style={{ flex: 1, position: "relative", background: "#000", overflow: "hidden" }}
         onClick={togglePlay}
       >
+        {/* The actual <video> element — visible so it definitely decodes.
+            The canvas is layered on top to intercept Tesla's video blackout. */}
+        <video
+          ref={videoRef}
+          playsInline
+          preload="auto"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            position: "absolute",
+            inset: 0,
+          }}
+        />
+
+        {/* Canvas overlay — draws video frames on top.
+            On Tesla in drive mode, the <video> gets blacked out but
+            the canvas stays visible since Tesla doesn't target canvas elements. */}
         <canvas
           ref={canvasRef}
           style={{
             width: "100%",
             height: "100%",
             objectFit: "contain",
-            display: "block",
+            position: "absolute",
+            inset: 0,
+            zIndex: 1,
           }}
         />
 
         {loading && (
           <div style={{
-            position: "absolute", inset: 0,
+            position: "absolute", inset: 0, zIndex: 2,
             display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
             background: "rgba(0,0,0,0.85)",
           }}>
@@ -242,7 +256,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
 
         {error && (
           <div style={{
-            position: "absolute", inset: 0,
+            position: "absolute", inset: 0, zIndex: 2,
             display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
             background: "rgba(0,0,0,0.85)", gap: 12,
           }}>
@@ -250,17 +264,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
               {error}
             </div>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setError(null);
-                setLoading(true);
-                const video = videoRef.current;
-                if (video) {
-                  video.src = `/api/youtube/stream?v=${videoId}`;
-                  video.load();
-                  video.play().catch(() => setLoading(false));
-                }
-              }}
+              onClick={(e) => { e.stopPropagation(); retry(); }}
               style={{
                 padding: "10px 24px",
                 background: "var(--cyan-dim)",
@@ -280,7 +284,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
 
         {!loading && !error && !playing && (
           <div style={{
-            position: "absolute", inset: 0,
+            position: "absolute", inset: 0, zIndex: 2,
             display: "flex", alignItems: "center", justifyContent: "center",
             background: "rgba(0,0,0,0.3)",
           }}>
