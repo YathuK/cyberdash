@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const yt = await getInnertube();
-    const info = await yt.getInfo(videoId);
+    const info = await yt.getBasicInfo(videoId);
 
     const streamingData = info.streaming_data;
     if (!streamingData) {
