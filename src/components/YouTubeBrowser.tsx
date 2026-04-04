@@ -50,41 +50,46 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
   };
 
   const startAuth = async () => {
+    if (authPolling) return; // Don't start twice
     setShowLogin(true);
+    setAuthCode("");
+    setAuthUrl("");
     try {
       const res = await fetch(`${PROXY_URL}/yt/auth/start`);
       const data = await res.json();
-      if (data.error) return;
+      if (data.error) {
+        setAuthCode("ERROR");
+        return;
+      }
       setAuthCode(data.userCode);
       setAuthUrl(data.verificationUrl);
-      // Start polling
       setAuthPolling(true);
-      pollAuth();
-    } catch {}
-  };
 
-  const pollAuth = async () => {
-    for (let i = 0; i < 60; i++) {
-      await new Promise(r => setTimeout(r, 3000));
-      try {
-        const res = await fetch(`${PROXY_URL}/yt/auth/poll`);
-        const data = await res.json();
-        if (data.success) {
-          setYtLoggedIn(true);
-          setShowLogin(false);
-          setAuthPolling(false);
-          setAuthCode("");
-          loadFeed();
-          return;
-        }
-        if (data.error && data.error !== "authorization_pending") {
-          setAuthCode("");
+      // Poll in the background
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        if (attempts > 120) { // 6 minutes max
+          clearInterval(poll);
           setAuthPolling(false);
           return;
         }
-      } catch {}
+        try {
+          const r = await fetch(`${PROXY_URL}/yt/auth/poll`);
+          const d = await r.json();
+          if (d.success) {
+            clearInterval(poll);
+            setYtLoggedIn(true);
+            setShowLogin(false);
+            setAuthPolling(false);
+            setAuthCode("");
+            loadFeed();
+          }
+        } catch {}
+      }, 3000);
+    } catch {
+      setAuthCode("ERROR");
     }
-    setAuthPolling(false);
   };
 
   const handleSearch = async () => {
@@ -241,26 +246,30 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
       >
         {/* Login overlay */}
         {showLogin && (
-          <div style={{ position: "absolute", inset: 0, zIndex: 10, background: "rgba(0,0,0,0.9)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-            <h2 style={{ color: "#fff", fontSize: 24, fontWeight: 700, marginBottom: 16 }}>Sign in to YouTube</h2>
-            {authCode ? (
+          <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,0.95)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <h2 style={{ color: "#fff", fontSize: 28, fontWeight: 700, marginBottom: 24 }}>Sign in to YouTube</h2>
+            {authCode && authCode !== "ERROR" ? (
               <div style={{ textAlign: "center" }}>
-                <p style={{ color: "#9ca3af", fontSize: 14, marginBottom: 12 }}>Go to this URL on your phone:</p>
-                <div style={{ background: "rgba(255,255,255,0.1)", padding: "12px 24px", borderRadius: 12, marginBottom: 16 }}>
-                  <span style={{ color: "#22d3ee", fontSize: 18, fontWeight: 700 }}>{authUrl}</span>
+                <p style={{ color: "#9ca3af", fontSize: 16, marginBottom: 16 }}>On your phone, go to:</p>
+                <div style={{ background: "rgba(255,255,255,0.1)", padding: "16px 32px", borderRadius: 14, marginBottom: 24 }}>
+                  <span style={{ color: "#22d3ee", fontSize: 22, fontWeight: 700 }}>{authUrl}</span>
                 </div>
-                <p style={{ color: "#9ca3af", fontSize: 14, marginBottom: 8 }}>Enter this code:</p>
-                <div style={{ background: "rgba(255,0,0,0.15)", border: "2px solid rgba(255,0,0,0.3)", padding: "16px 32px", borderRadius: 16, marginBottom: 16 }}>
-                  <span style={{ color: "#fff", fontSize: 32, fontWeight: 800, letterSpacing: "0.2em" }}>{authCode}</span>
+                <p style={{ color: "#9ca3af", fontSize: 16, marginBottom: 12 }}>Enter this code:</p>
+                <div style={{ background: "rgba(255,0,0,0.15)", border: "3px solid rgba(255,0,0,0.4)", padding: "20px 40px", borderRadius: 20, marginBottom: 20 }}>
+                  <span style={{ color: "#fff", fontSize: 40, fontWeight: 800, letterSpacing: "0.25em" }}>{authCode}</span>
                 </div>
-                <p style={{ color: "#6b7280", fontSize: 13 }}>{authPolling ? "Waiting for you to sign in..." : "Done"}</p>
+                <p style={{ color: "#22c55e", fontSize: 15, fontWeight: 600 }}>
+                  {authPolling ? "Waiting for you to approve..." : "Checking..."}
+                </p>
               </div>
+            ) : authCode === "ERROR" ? (
+              <p style={{ color: "#f87171", fontSize: 16 }}>Failed to start sign in. Try again.</p>
             ) : (
-              <p style={{ color: "#6b7280" }}>Starting...</p>
+              <p style={{ color: "#6b7280", fontSize: 16 }}>Getting your sign-in code...</p>
             )}
-            <button onClick={() => setShowLogin(false)} style={{
-              marginTop: 20, padding: "10px 24px", background: "rgba(239,68,68,0.12)", color: "#f87171",
-              border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, fontSize: 14, cursor: "pointer", minHeight: 44,
+            <button onClick={() => { setShowLogin(false); setAuthPolling(false); }} style={{
+              marginTop: 24, padding: "12px 32px", background: "rgba(239,68,68,0.12)", color: "#f87171",
+              border: "1px solid rgba(239,68,68,0.25)", borderRadius: 10, fontSize: 16, fontWeight: 600, cursor: "pointer", minHeight: 48,
             }}>Cancel</button>
           </div>
         )}
