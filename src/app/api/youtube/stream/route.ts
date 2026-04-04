@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
     if (!format) {
       // Fallback: any combined format
-      format = (streamingData.formats || []).find((f) => f.has_video && f.has_audio) || null;
+      format = (streamingData.formats || []).find((f) => f.has_video && f.has_audio);
     }
 
     if (!format) {
