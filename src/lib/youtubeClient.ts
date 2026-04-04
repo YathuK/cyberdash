@@ -22,10 +22,12 @@ export async function getYouTubeStream(videoId: string): Promise<StreamResult> {
       if (text.startsWith("{")) {
         const data = JSON.parse(text);
         if (data.url) {
+          // If URL is relative (from our proxy), make it absolute
+          const fullUrl = data.url.startsWith("/") ? `${PROXY_URL}${data.url}` : data.url;
           console.log("[YaVik] Got direct stream via proxy:", data.quality);
           return {
             stream: {
-              url: data.url,
+              url: fullUrl,
               mimeType: data.mimeType || "video/mp4",
               quality: data.quality || "360p",
             },
