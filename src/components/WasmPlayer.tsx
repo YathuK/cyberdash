@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import MP4Box from "mp4box";
+// mp4box imported dynamically in useEffect to avoid SSR issues
 
 interface WasmPlayerProps {
   videoId: string;
@@ -91,6 +91,10 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose }: WasmP
         }
 
         setStatus("Setting up decoders...");
+
+        // Dynamic import mp4box (can't be top-level in Next.js)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const MP4Box = (await import("mp4box")) as any;
 
         // Video decoder
         s.videoDecoder = new VideoDecoder({
