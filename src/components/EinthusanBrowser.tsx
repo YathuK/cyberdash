@@ -94,6 +94,8 @@ export default function EinthusanBrowser({ onPlay, onClose }: EinthusanBrowserPr
       if (data.url) {
         const fullUrl = data.url.startsWith("/") ? `${PROXY_URL}${data.url}` : data.url;
         onPlay(movie.id, data.title || movie.title, fullUrl);
+      } else if (data.error?.includes("Login required")) {
+        setShowLogin(true);
       } else {
         alert(data.error || "Could not load movie");
       }
