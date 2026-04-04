@@ -18,8 +18,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Find best MP4 combined format (video + audio)
-    let format = (streamingData.formats || [])
-      .filter((f) => f.has_video && f.has_audio && f.mime_type?.includes("video/mp4"))
+    const allCombined = (streamingData.formats || []).filter((f) => f.has_video && f.has_audio);
+
+    const mp4Format = allCombined
+      .filter((f) => f.mime_type?.includes("video/mp4"))
       .sort((a, b) => {
         const aH = a.height || 0;
         const bH = b.height || 0;
@@ -29,10 +31,7 @@ export async function GET(request: NextRequest) {
         return aH - bH;
       })[0];
 
-    if (!format) {
-      // Fallback: any combined format
-      format = (streamingData.formats || []).find((f) => f.has_video && f.has_audio);
-    }
+    const format = mp4Format || allCombined[0];
 
     if (!format) {
       return Response.json({ error: "No playable format found" }, { status: 404 });
