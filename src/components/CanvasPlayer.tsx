@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { getYouTubeStream } from "@/lib/youtubeClient";
 
 interface CanvasPlayerProps {
   videoId: string;
@@ -19,6 +20,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [embedUrl, setEmbedUrl] = useState<string | null>(null);
+  const [mode, setMode] = useState<"loading" | "canvas" | "embed">("loading");
 
   const drawFrame = useCallback(() => {
     const video = videoRef.current;
@@ -42,38 +44,26 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
     let cancelled = false;
 
     async function loadVideo() {
-      try {
-        const res = await fetch(`/api/youtube/stream?v=${videoId}`);
-        const data = await res.json();
-        if (cancelled) return;
+      const result = await getYouTubeStream(videoId);
 
-        if (data.fallback) {
-          // Server couldn't get direct URL — use YouTube embed instead
-          setEmbedUrl(data.embedUrl);
-          setLoading(false);
-          return;
-        }
+      if (cancelled) return;
 
-        if (data.error) {
-          setError(data.error);
-          setLoading(false);
-          return;
-        }
-
+      if (result.stream) {
+        // Got direct stream URL — use canvas player
         const video = videoRef.current;
         if (!video || cancelled) return;
 
-        video.src = data.url;
+        setMode("canvas");
+        video.src = result.stream.url;
         video.load();
         setTimeout(() => {
           if (!cancelled) video.play().catch(() => setLoading(false));
         }, 300);
-      } catch (err) {
-        if (!cancelled) {
-          // Network error — fall back to embed
-          setEmbedUrl(`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0`);
-          setLoading(false);
-        }
+      } else {
+        // No direct stream — use embed (works when parked, audio-only while driving)
+        setEmbedUrl(result.embedUrl);
+        setMode("embed");
+        setLoading(false);
       }
     }
 
@@ -102,6 +92,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
     const onError = () => {
       // Direct stream failed — fall back to embed
       setEmbedUrl(`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0`);
+      setMode("embed");
       setLoading(false);
     };
 
@@ -143,62 +134,54 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
     return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, "0")}`;
   };
 
-  // ===== EMBED FALLBACK MODE =====
-  if (embedUrl) {
+  // Top bar (shared between both modes)
+  const topBar = (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "6px 16px", background: "rgba(3,7,18,0.95)",
+      borderBottom: "1px solid rgba(34,211,238,0.15)", flexShrink: 0, height: 48,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, overflow: "hidden", flex: 1 }}>
+        <span style={{ color: "var(--cyan)", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>CyberDash</span>
+        <span style={{ color: "#6b7280" }}>/</span>
+        <span style={{ color: "#e5e7eb", fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+        {mode === "canvas" && (
+          <span style={{ color: "#22c55e", fontSize: 10, fontWeight: 700, textTransform: "uppercase", flexShrink: 0 }}>
+            Drive Mode
+          </span>
+        )}
+      </div>
+      <button onClick={onClose} style={{
+        padding: "8px 24px", background: "rgba(239,68,68,0.12)", color: "#f87171",
+        border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8,
+        fontSize: 14, fontWeight: 600, cursor: "pointer", minHeight: 40,
+      }}>Close</button>
+    </div>
+  );
+
+  // EMBED MODE
+  if (mode === "embed" && embedUrl) {
     return (
       <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "#000", display: "flex", flexDirection: "column" }}>
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "6px 16px", background: "rgba(3,7,18,0.95)",
-          borderBottom: "1px solid rgba(34,211,238,0.15)", flexShrink: 0, height: 48,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, overflow: "hidden", flex: 1 }}>
-            <span style={{ color: "var(--cyan)", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>CyberDash</span>
-            <span style={{ color: "#6b7280" }}>/</span>
-            <span style={{ color: "#e5e7eb", fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
-          </div>
-          <button onClick={onClose} style={{
-            padding: "8px 24px", background: "rgba(239,68,68,0.12)", color: "#f87171",
-            border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8,
-            fontSize: 14, fontWeight: 600, cursor: "pointer", minHeight: 40,
-          }}>Close</button>
-        </div>
+        {topBar}
         <div style={{ flex: 1 }}>
-          <iframe
-            src={embedUrl}
-            style={{ width: "100%", height: "100%", border: "none" }}
-            allow="autoplay; fullscreen; encrypted-media"
-            allowFullScreen
-          />
+          <iframe src={embedUrl} style={{ width: "100%", height: "100%", border: "none" }}
+            allow="autoplay; fullscreen; encrypted-media" allowFullScreen />
         </div>
       </div>
     );
   }
 
-  // ===== CANVAS PLAYER MODE (direct stream available) =====
+  // CANVAS MODE (or loading)
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "#000", display: "flex", flexDirection: "column" }}>
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "6px 16px", background: "rgba(3,7,18,0.95)",
-        borderBottom: "1px solid rgba(34,211,238,0.15)", flexShrink: 0, height: 48,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, overflow: "hidden", flex: 1 }}>
-          <span style={{ color: "var(--cyan)", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>CyberDash</span>
-          <span style={{ color: "#6b7280" }}>/</span>
-          <span style={{ color: "#e5e7eb", fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
-        </div>
-        <button onClick={onClose} style={{
-          padding: "8px 24px", background: "rgba(239,68,68,0.12)", color: "#f87171",
-          border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8,
-          fontSize: 14, fontWeight: 600, cursor: "pointer", minHeight: 40,
-        }}>Close</button>
-      </div>
+      {topBar}
 
       <div style={{ flex: 1, position: "relative", background: "#000", overflow: "hidden" }} onClick={togglePlay}>
         <video ref={videoRef} playsInline preload="auto"
           style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0 }}
         />
+        {/* Canvas on top — Tesla blacks out <video> while driving but not <canvas> */}
         <canvas ref={canvasRef}
           style={{ width: "100%", height: "100%", objectFit: "contain", position: "absolute", inset: 0, zIndex: 1 }}
         />
@@ -224,6 +207,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
         )}
       </div>
 
+      {/* Controls */}
       <div style={{ padding: "8px 16px 12px", background: "rgba(3,7,18,0.95)", borderTop: "1px solid rgba(34,211,238,0.15)", flexShrink: 0 }}>
         <div onClick={seek} onTouchStart={seek} style={{ width: "100%", height: 32, display: "flex", alignItems: "center", cursor: "pointer", touchAction: "none" }}>
           <div style={{ width: "100%", height: 4, background: "rgba(75,85,99,0.5)", borderRadius: 2, position: "relative", overflow: "hidden" }}>
