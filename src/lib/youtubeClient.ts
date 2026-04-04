@@ -5,7 +5,7 @@
 const PROXY_URL = "https://pal-mens-documentation-dublin.trycloudflare.com";
 
 export interface StreamResult {
-  stream?: { url: string; mimeType: string; quality: string };
+  stream?: { url: string; audioUrl?: string; mimeType: string; quality: string };
   embedUrl: string;
 }
 
@@ -22,12 +22,14 @@ export async function getYouTubeStream(videoId: string): Promise<StreamResult> {
       if (text.startsWith("{")) {
         const data = JSON.parse(text);
         if (data.url) {
-          // If URL is relative (from our proxy), make it absolute
           const fullUrl = data.url.startsWith("/") ? `${PROXY_URL}${data.url}` : data.url;
-          console.log("[YaVik] Got direct stream via proxy:", data.quality);
+          const fullAudioUrl = data.audioUrl
+            ? (data.audioUrl.startsWith("/") ? `${PROXY_URL}${data.audioUrl}` : data.audioUrl)
+            : fullUrl;
           return {
             stream: {
               url: fullUrl,
+              audioUrl: fullAudioUrl,
               mimeType: data.mimeType || "video/mp4",
               quality: data.quality || "360p",
             },

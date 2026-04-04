@@ -6,11 +6,12 @@ interface WasmPlayerProps {
   videoId: string;
   title: string;
   streamUrl: string;
+  audioStreamUrl?: string;
   onClose: () => void;
   onError?: () => void;
 }
 
-export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError }: WasmPlayerProps) {
+export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, onClose, onError }: WasmPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const stateRef = useRef({
@@ -209,10 +210,10 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
         mp4.onError = (e: string) => setDecoderState(`MP4 ERROR: ${e}`);
 
         // Stream and play — feed chunks to MP4Box as they arrive
-        // Also set audio src to stream URL so it plays in parallel
+        // Set audio to separate audio stream (higher quality) or same URL
         const audio = audioRef.current;
         if (audio) {
-          audio.src = streamUrl;
+          audio.src = audioStreamUrl || streamUrl;
           audio.load();
         }
 

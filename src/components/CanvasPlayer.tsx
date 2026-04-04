@@ -13,6 +13,7 @@ interface CanvasPlayerProps {
 
 export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerProps) {
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [embedUrl, setEmbedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [wasmCrashed, setWasmCrashed] = useState(false);
@@ -27,6 +28,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
 
         if (result.stream) {
           setStreamUrl(result.stream.url);
+          setAudioUrl(result.stream.audioUrl || result.stream.url);
           setEmbedUrl(result.embedUrl);
         } else {
           setEmbedUrl(result.embedUrl);
@@ -82,6 +84,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
           videoId={videoId}
           title={title}
           streamUrl={streamUrl}
+          audioStreamUrl={audioUrl || streamUrl}
           onClose={onClose}
           onError={() => setWasmCrashed(true)}
         />
