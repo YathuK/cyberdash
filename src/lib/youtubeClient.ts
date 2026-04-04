@@ -1,6 +1,6 @@
 // YouTube stream fetcher
 
-const PROXY_URL = "https://greg-text-campbell-kerry.trycloudflare.com";
+const PROXY_URL = "https://theoretical-partition-unified-stored.trycloudflare.com";
 
 export interface StreamResult {
   stream?: { url: string; audioUrl?: string; mimeType: string; quality: string };
