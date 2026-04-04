@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { searchYouTube } from "@/lib/youtubeClient";
+
+const PROXY_URL = "https://yavik-proxy.ineffableconstruction.ca";
 
 interface Video {
   id: string;
@@ -22,6 +24,62 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
   const [results, setResults] = useState<Video[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+
+  // YouTube login state
+  const [ytLoggedIn, setYtLoggedIn] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [authCode, setAuthCode] = useState("");
+  const [authUrl, setAuthUrl] = useState("");
+  const [authPolling, setAuthPolling] = useState(false);
+  const [feedVideos, setFeedVideos] = useState<Video[]>([]);
+
+  useEffect(() => {
+    // Check if already logged in
+    fetch(`${PROXY_URL}/yt/auth/status`).then(r => r.json()).then(d => {
+      setYtLoggedIn(d.loggedIn);
+      if (d.loggedIn) loadFeed();
+    }).catch(() => {});
+  }, []);
+
+  const loadFeed = async () => {
+    try {
+      const res = await fetch(`${PROXY_URL}/yt/feed`);
+      const data = await res.json();
+      if (data.videos?.length > 0) setFeedVideos(data.videos);
+    } catch {}
+  };
+
+  const startAuth = async () => {
+    setShowLogin(true);
+    try {
+      const res = await fetch(`${PROXY_URL}/yt/auth/start`);
+      const data = await res.json();
+      if (data.error) return;
+      setAuthCode(data.userCode);
+      setAuthUrl(data.verificationUrl);
+      // Start polling
+      setAuthPolling(true);
+      pollAuth();
+    } catch {}
+  };
+
+  const pollAuth = async () => {
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      try {
+        const res = await fetch(`${PROXY_URL}/yt/auth/poll`);
+        const data = await res.json();
+        if (data.success) {
+          setYtLoggedIn(true);
+          setShowLogin(false);
+          setAuthPolling(false);
+          loadFeed();
+          return;
+        }
+      } catch {}
+    }
+    setAuthPolling(false);
+  };
 
   const handleSearch = async () => {
     const input = query.trim();
@@ -139,7 +197,18 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
           </button>
         </div>
 
-        {/* Close */}
+        {/* Auth + Close */}
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          {!ytLoggedIn ? (
+            <button onClick={startAuth} style={{
+              padding: "8px 16px", background: "rgba(255,255,255,0.1)", color: "#fff",
+              border: "1px solid rgba(255,255,255,0.2)", borderRadius: 8,
+              fontSize: 13, fontWeight: 600, cursor: "pointer", minHeight: 40,
+            }}>Sign In</button>
+          ) : (
+            <span style={{ color: "#22c55e", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center" }}>Signed In</span>
+          )}
+        </div>
         <button
           onClick={onClose}
           style={{
@@ -164,14 +233,63 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
         className="scroll-area"
         style={{ flex: 1, padding: "16px 20px", minHeight: 0 }}
       >
+        {/* Login overlay */}
+        {showLogin && (
+          <div style={{ position: "absolute", inset: 0, zIndex: 10, background: "rgba(0,0,0,0.9)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <h2 style={{ color: "#fff", fontSize: 24, fontWeight: 700, marginBottom: 16 }}>Sign in to YouTube</h2>
+            {authCode ? (
+              <div style={{ textAlign: "center" }}>
+                <p style={{ color: "#9ca3af", fontSize: 14, marginBottom: 12 }}>Go to this URL on your phone:</p>
+                <div style={{ background: "rgba(255,255,255,0.1)", padding: "12px 24px", borderRadius: 12, marginBottom: 16 }}>
+                  <span style={{ color: "#22d3ee", fontSize: 18, fontWeight: 700 }}>{authUrl}</span>
+                </div>
+                <p style={{ color: "#9ca3af", fontSize: 14, marginBottom: 8 }}>Enter this code:</p>
+                <div style={{ background: "rgba(255,0,0,0.15)", border: "2px solid rgba(255,0,0,0.3)", padding: "16px 32px", borderRadius: 16, marginBottom: 16 }}>
+                  <span style={{ color: "#fff", fontSize: 32, fontWeight: 800, letterSpacing: "0.2em" }}>{authCode}</span>
+                </div>
+                <p style={{ color: "#6b7280", fontSize: 13 }}>{authPolling ? "Waiting for you to sign in..." : "Done"}</p>
+              </div>
+            ) : (
+              <p style={{ color: "#6b7280" }}>Starting...</p>
+            )}
+            <button onClick={() => setShowLogin(false)} style={{
+              marginTop: 20, padding: "10px 24px", background: "rgba(239,68,68,0.12)", color: "#f87171",
+              border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, fontSize: 14, cursor: "pointer", minHeight: 44,
+            }}>Cancel</button>
+          </div>
+        )}
+
         {!searched && (
-          <div style={{ textAlign: "center", padding: "80px 0" }}>
-            <p style={{ color: "#6b7280", fontSize: 16, margin: "0 0 8px" }}>
-              Search for any video or paste a YouTube URL
-            </p>
-            <p style={{ color: "#4b5563", fontSize: 13 }}>
-              Works while driving
-            </p>
+          <div>
+            {feedVideos.length > 0 ? (
+              <div>
+                <p style={{ color: "#6b7280", fontSize: 13, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Recommended for you</p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+                  {feedVideos.map(video => (
+                    <div key={video.id} onClick={() => onPlay(video.id, video.title)}
+                      style={{ background: "rgba(17,24,39,0.7)", border: "1px solid rgba(75,85,99,0.3)", borderRadius: 14, overflow: "hidden", cursor: "pointer" }}>
+                      <div style={{ position: "relative", width: "100%", paddingTop: "56.25%", background: "#111827" }}>
+                        {video.thumbnail && <img src={video.thumbnail} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />}
+                        {video.duration && <span style={{ position: "absolute", bottom: 6, right: 6, background: "rgba(0,0,0,0.8)", color: "#fff", fontSize: 12, fontWeight: 600, padding: "2px 6px", borderRadius: 4 }}>{video.duration}</span>}
+                      </div>
+                      <div style={{ padding: "10px 12px" }}>
+                        <div style={{ color: "#fff", fontSize: 14, fontWeight: 600, lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{video.title}</div>
+                        <div style={{ color: "#9ca3af", fontSize: 12, marginTop: 4 }}>{video.author}{video.views && ` · ${video.views}`}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ textAlign: "center", padding: "80px 0" }}>
+                <p style={{ color: "#6b7280", fontSize: 16, margin: "0 0 8px" }}>
+                  Search for any video or paste a YouTube URL
+                </p>
+                <p style={{ color: "#4b5563", fontSize: 13 }}>
+                  {ytLoggedIn ? "Your recommendations will appear here" : "Sign in to see your recommendations"}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
