@@ -355,13 +355,6 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
 
       <audio ref={audioRef} preload="auto" style={{ display: "none" }} />
 
-      {/* Debug */}
-      <div style={{
-        padding: "2px 12px", background: "rgba(0,0,0,0.9)", color: "#facc15",
-        fontSize: 10, fontFamily: "monospace", flexShrink: 0,
-      }}>
-        {decoderState} | decoded={frameCount} drawn={drawnCount} queue={stateRef.current.frameQueue.length}
-      </div>
 
       <div style={{ flex: 1, position: "relative", background: "#000", overflow: "hidden" }} onClick={togglePlay}>
         <canvas ref={canvasRef} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
