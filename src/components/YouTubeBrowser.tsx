@@ -65,7 +65,7 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
 
   const pollAuth = async () => {
     for (let i = 0; i < 60; i++) {
-      await new Promise(r => setTimeout(r, 5000));
+      await new Promise(r => setTimeout(r, 3000));
       try {
         const res = await fetch(`${PROXY_URL}/yt/auth/poll`);
         const data = await res.json();
@@ -73,7 +73,13 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
           setYtLoggedIn(true);
           setShowLogin(false);
           setAuthPolling(false);
+          setAuthCode("");
           loadFeed();
+          return;
+        }
+        if (data.error && data.error !== "authorization_pending") {
+          setAuthCode("");
+          setAuthPolling(false);
           return;
         }
       } catch {}
