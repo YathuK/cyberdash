@@ -203,7 +203,9 @@ export default function WasmPlayer({ videoId, title, streamUrl, onClose, onError
 
         // Stream video bytes from local proxy
         setStatus("Buffering...");
-        const res = await fetch(streamUrl);
+        const res = await fetch(streamUrl, {
+          headers: { "ngrok-skip-browser-warning": "true" },
+        });
         if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
         const reader = res.body.getReader();
