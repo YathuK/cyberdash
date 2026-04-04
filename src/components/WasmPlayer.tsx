@@ -41,9 +41,6 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [status, setStatus] = useState("Connecting...");
-  const [frameCount, setFrameCount] = useState(0);
-  const [drawnCount, setDrawnCount] = useState(0);
-  const [decoderState, setDecoderState] = useState("init");
   const [seeking, setSeeking] = useState(false);
   const seekBarRef = useRef<HTMLDivElement>(null);
 
@@ -79,7 +76,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
       ctx.drawImage(frame, 0, 0);
       frame.close();
       s.framesDrawn++;
-      setDrawnCount(s.framesDrawn);
+      
 
       const sec = elapsedUs / 1_000_000;
       setCurrentTime(sec);
@@ -98,7 +95,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
 
     setLoading(false);
     setPlaying(true);
-    setDecoderState(prev => prev + " | PLAYING");
+    
 
     // Start render loop first — audio starts after first frame draws
     renderLoop();
@@ -138,7 +135,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
           output: (frame) => {
             if (s.cancelled) { frame.close(); return; }
             totalFrames++;
-            setFrameCount(totalFrames);
+            
             s.frameQueue.push(frame);
             // Start after 5 frames decoded
             if (s.frameQueue.length >= 5 && !s.started) {
@@ -146,7 +143,6 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
             }
           },
           error: (e) => {
-            setDecoderState(`DECODE ERROR: ${e}`);
           },
         });
 
@@ -187,21 +183,17 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
             try {
               s.videoDecoder.configure(cfg);
               s.videoConfig = cfg;
-              setDecoderState(`OK: ${vt.codec} ${vt.video?.width}x${vt.video?.height}`);
             } catch {
               try {
                 delete cfg.description;
                 s.videoDecoder.configure(cfg);
-                setDecoderState(`OK (no desc): ${vt.codec}`);
               } catch (e2) {
-                setDecoderState(`FAIL: ${e2}`);
               }
             }
 
             s.videoTrackId = vt.id;
             mp4.setExtractionOptions(vt.id, "video", { nbSamples: 100 });
           } else {
-            setDecoderState("NO VIDEO TRACK");
           }
 
           mp4.start();
@@ -224,7 +216,6 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
           }
         };
 
-        mp4.onError = (e: string) => setDecoderState(`MP4 ERROR: ${e}`);
 
         // Stream and play — feed chunks to MP4Box as they arrive
         setStatus("Connecting...");

@@ -12,11 +12,8 @@ export async function getYouTubeStream(videoId: string): Promise<StreamResult> {
 
   if (PROXY_URL) {
     try {
-      console.log("[YaVik] Fetching stream from:", PROXY_URL);
       const res = await fetch(`${PROXY_URL}/stream?v=${videoId}`);
-      console.log("[YaVik] Stream response status:", res.status);
       const text = await res.text();
-      console.log("[YaVik] Stream response:", text.substring(0, 100));
 
       if (text.startsWith("{")) {
         const data = JSON.parse(text);
@@ -25,8 +22,6 @@ export async function getYouTubeStream(videoId: string): Promise<StreamResult> {
           const fullAudioUrl = data.audioUrl
             ? (data.audioUrl.startsWith("/") ? `${PROXY_URL}${data.audioUrl}` : data.audioUrl)
             : fullUrl;
-          console.log("[YaVik] Stream URL:", fullUrl.substring(0, 60));
-          console.log("[YaVik] Audio URL:", fullAudioUrl.substring(0, 60));
           return {
             stream: {
               url: fullUrl,
@@ -38,9 +33,7 @@ export async function getYouTubeStream(videoId: string): Promise<StreamResult> {
           };
         }
       }
-      console.warn("[YaVik] Proxy returned non-stream response");
     } catch (err) {
-      console.warn("[YaVik] Proxy failed:", err);
     }
   }
 
