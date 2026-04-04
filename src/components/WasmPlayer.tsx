@@ -27,7 +27,10 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     framesDrawn: 0,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mp4File: null as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    MP4Box: null as any,
     videoTrackId: 0,
+    videoConfig: null as VideoDecoderConfig | null,
     fullBuffer: null as ArrayBuffer | null,
   });
 
@@ -116,6 +119,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const mp4module = (await import("mp4box")) as any;
         const MP4Box = mp4module.default || mp4module;
+        s.MP4Box = MP4Box;
 
         let totalFrames = 0;
         s.videoDecoder = new VideoDecoder({
@@ -170,6 +174,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
 
             try {
               s.videoDecoder.configure(cfg);
+              s.videoConfig = cfg;
               setDecoderState(`OK: ${vt.codec} ${vt.video?.width}x${vt.video?.height}`);
             } catch {
               try {
@@ -313,45 +318,53 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
       s.frameQueue.shift()!.close();
     }
 
-    // Re-decode from the seek point using MP4Box seek
-    if (s.mp4File && s.videoTrackId && s.fullBuffer && s.videoDecoder?.state === "configured") {
+    // Re-decode from the seek point
+    if (s.fullBuffer && s.videoConfig && s.MP4Box) {
       try {
-        // Reset decoder to clear any pending frames
-        s.videoDecoder.reset();
+        // Reset and reconfigure decoder
+        s.videoDecoder?.reset();
+        s.videoDecoder?.configure(s.videoConfig);
 
-        // Re-configure (reset clears config)
-        const trak = s.mp4File.getTrackById(s.videoTrackId);
-        const codec = trak?.mdia?.minf?.stbl?.stsd?.entries?.[0]?.avcC
-          ? trak.codec : trak.codec;
+        // Create a fresh MP4Box file and re-parse the buffer
+        const mp4 = s.MP4Box.createFile();
+        const targetUs = targetTime * 1_000_000;
 
-        let desc: Uint8Array | undefined;
-        try {
-          for (const entry of trak.mdia.minf.stbl.stsd.entries) {
-            const avcC = entry.avcC || entry.hvcC;
-            if (avcC) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const MP4Box = s.mp4File.constructor as any;
-              const ds = new MP4Box.DataStream(undefined, 0, MP4Box.DataStream.BIG_ENDIAN);
-              avcC.write(ds);
-              desc = new Uint8Array(ds.buffer, 8);
-              break;
-            }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        mp4.onReady = (info: any) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const vt = info.tracks.find((t: any) => t.type === "video");
+          if (vt) {
+            mp4.setExtractionOptions(vt.id, "video", { nbSamples: 100 });
+            mp4.seek(targetTime, true);
+            mp4.start();
           }
-        } catch { /* no desc */ }
-
-        const cfg: VideoDecoderConfig = {
-          codec: codec,
-          codedWidth: trak.video?.width || 640,
-          codedHeight: trak.video?.height || 360,
         };
-        if (desc) cfg.description = desc;
-        s.videoDecoder.configure(cfg);
 
-        // Seek MP4Box to the target time and re-extract samples
-        s.mp4File.seek(targetTime, true);
-        s.mp4File.start();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        mp4.onSamples = (_id: number, type: string, samples: any[]) => {
+          if (type !== "video" || !s.videoDecoder || s.videoDecoder.state !== "configured") return;
+          for (const sample of samples) {
+            const ts = (sample.cts * 1_000_000) / sample.timescale;
+            // Only decode frames at or after seek target
+            if (ts < targetUs - 1_000_000) continue;
+            try {
+              s.videoDecoder.decode(new EncodedVideoChunk({
+                type: sample.is_sync ? "key" : "delta",
+                timestamp: ts,
+                duration: (sample.duration * 1_000_000) / sample.timescale,
+                data: sample.data,
+              }));
+            } catch { /* decode error */ }
+          }
+        };
+
+        // Feed the stored buffer
+        const buf = s.fullBuffer.slice(0) as ArrayBuffer & { fileStart: number };
+        buf.fileStart = 0;
+        mp4.appendBuffer(buf);
+        mp4.flush();
       } catch {
-        // Seek failed — video will catch up when new frames arrive
+        // Seek failed
       }
     }
 
