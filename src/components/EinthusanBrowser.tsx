@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 
-const PROXY_URL = "https://theoretical-partition-unified-stored.trycloudflare.com";
+const PROXY_URL = "https://received-void-obtaining-paperback.trycloudflare.com";
 
 const LANGUAGES = [
   { code: "tamil", label: "Tamil" },
