@@ -95,19 +95,19 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
 
     setLoading(false);
     setPlaying(true);
-    
 
-    // Start render loop first — audio starts after first frame draws
+    // Start render loop
     renderLoop();
 
-    // Small delay to let first frames render, then start audio in sync
-    setTimeout(() => {
-      const audio = audioRef.current;
-      if (audio) {
-        audio.currentTime = 0;
-        audio.play().catch(() => {});
-      }
-    }, 150);
+    // Try to start audio — might fail without user gesture on desktop browsers
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = 0;
+      audio.play().catch(() => {
+        // Audio autoplay blocked — user needs to tap to start sound
+        // Video keeps playing silently, first tap will enable audio
+      });
+    }
   }, [renderLoop]);
 
   useEffect(() => {
@@ -298,10 +298,17 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
   const togglePlay = () => {
     const s = stateRef.current;
     const audio = audioRef.current;
+
+    // If audio was blocked by autoplay, first tap should start it
+    if (audio && audio.paused && !s.paused) {
+      audio.play().catch(() => {});
+      return; // Don't pause video, just start audio
+    }
+
     if (s.paused) {
       s.paused = false;
       s.startTime += performance.now() - s.pausedAt;
-      audio?.play();
+      audio?.play().catch(() => {});
       setPlaying(true);
       renderLoop();
     } else {
