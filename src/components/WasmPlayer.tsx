@@ -34,6 +34,9 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     // Abort controller for the in-flight stream fetch — lets seekTo cancel
     // and re-fetch from a new offset without leaking the previous reader.
     fetchAbort: null as AbortController | null,
+    // For stall detection: when did we last successfully draw a frame?
+    lastFrameAt: 0,
+    recovering: false,
   });
 
   const [playing, setPlaying] = useState(false);
@@ -78,7 +81,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
       ctx.drawImage(frame, 0, 0);
       frame.close();
       s.framesDrawn++;
-      
+      s.lastFrameAt = performance.now();
 
       const sec = elapsedUs / 1_000_000;
       setCurrentTime(sec);
@@ -110,6 +113,106 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
       }
     }, 150);
   }, [renderLoop]);
+
+  // Reload the stream and resume playback at targetTime. Used for both
+  // user-initiated seeks AND auto-recovery when the player stalls.
+  const restartFromTime = useCallback((targetTime: number) => {
+    const s = stateRef.current;
+    const audio = audioRef.current;
+    if (!s.videoConfig || !s.MP4Box || !s.totalDuration) return;
+
+    if (audio && isFinite(targetTime)) audio.currentTime = targetTime;
+    s.startTime = performance.now() - targetTime * 1000;
+
+    while (s.frameQueue.length > 0) {
+      s.frameQueue.shift()!.close();
+    }
+
+    try { s.fetchAbort?.abort(); } catch {}
+    try { s.videoDecoder?.reset(); } catch {}
+    try { s.videoDecoder?.configure(s.videoConfig); } catch {}
+
+    const mp4 = s.MP4Box.createFile();
+    s.mp4File = mp4;
+    const targetUs = targetTime * 1_000_000;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mp4.onReady = (info: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vt = info.tracks.find((t: any) => t.type === "video");
+      if (vt) {
+        mp4.setExtractionOptions(vt.id, "video", { nbSamples: 100 });
+        mp4.seek(targetTime, true);
+        mp4.start();
+      }
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mp4.onSamples = (_id: number, type: string, samples: any[]) => {
+      if (type !== "video" || !s.videoDecoder || s.videoDecoder.state !== "configured") return;
+      for (const sample of samples) {
+        const ts = (sample.cts * 1_000_000) / sample.timescale;
+        if (ts < targetUs - 1_000_000) continue;
+        try {
+          s.videoDecoder.decode(new EncodedVideoChunk({
+            type: sample.is_sync ? "key" : "delta",
+            timestamp: ts,
+            duration: (sample.duration * 1_000_000) / sample.timescale,
+            data: sample.data,
+          }));
+        } catch { /* decode error */ }
+      }
+    };
+
+    // Refetch the stream in chunks (same retry logic as the initial fetch
+    // so cell drops mid-recovery don't kill us a second time).
+    (async () => {
+      const CHUNK_SIZE = 4 * 1024 * 1024;
+      const MAX_RETRIES = 6;
+      let offset = 0;
+      let totalLength: number | null = null;
+      try {
+        s.fetchAbort = new AbortController();
+        while (!s.cancelled) {
+          if (totalLength != null && offset >= totalLength) break;
+          const rangeEnd: number = totalLength != null
+            ? Math.min(offset + CHUNK_SIZE - 1, totalLength - 1)
+            : offset + CHUNK_SIZE - 1;
+          let chunk: ArrayBuffer | null = null;
+          for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            if (s.cancelled) return;
+            try {
+              const r: Response = await fetch(streamUrl, {
+                signal: s.fetchAbort.signal,
+                headers: { Range: `bytes=${offset}-${rangeEnd}` },
+              });
+              if (!r.ok && r.status !== 200 && r.status !== 206) throw new Error("HTTP " + r.status);
+              if (totalLength == null) {
+                const cr = r.headers.get("content-range");
+                const m = cr && cr.match(/\/(\d+)/);
+                if (m) totalLength = parseInt(m[1]);
+              }
+              chunk = await r.arrayBuffer();
+              break;
+            } catch (err) {
+              if (s.cancelled || (err instanceof DOMException && err.name === "AbortError")) return;
+              if (attempt === MAX_RETRIES) return;
+              await new Promise((res) => setTimeout(res, Math.min(8000, 500 * Math.pow(2, attempt))));
+            }
+          }
+          if (!chunk) break;
+          const buf = chunk as ArrayBuffer & { fileStart: number };
+          buf.fileStart = offset;
+          offset += buf.byteLength;
+          try { mp4.appendBuffer(buf); } catch {}
+          if (chunk.byteLength < CHUNK_SIZE) break;
+        }
+        try { mp4.flush(); } catch {}
+      } catch {
+        /* aborted by another restart or unmount — fine */
+      }
+    })();
+  }, [streamUrl]);
 
   useEffect(() => {
     const s = stateRef.current;
@@ -218,15 +321,6 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
         };
 
 
-        // Stream and play — feed chunks to MP4Box as they arrive.
-        // We DO NOT keep the chunks around: long videos in Tesla's
-        // memory-constrained browser would OOM. mp4box keeps its own
-        // sample index, and seeks refetch from the network.
-        setStatus("Connecting...");
-        s.fetchAbort = new AbortController();
-        const res = await fetch(streamUrl, { signal: s.fetchAbort.signal });
-        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-
         // Set audio source — use separate audio URL if provided, otherwise same stream.
         // For DASH-split YouTube, audioStreamUrl is a small audio-only m4a,
         // which is much smaller than the muxed video file.
@@ -236,28 +330,73 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
           audio.load();
         }
 
-        setStatus("Buffering...");
-        const reader = res.body.getReader();
+        // Chunked range fetching with retry. The original single-fetch approach
+        // died completely on the first cell dead-zone — fatal for highway driving.
+        // Now each chunk is its own HTTP Range request, and a failed chunk only
+        // costs a retry instead of restarting the whole video.
+        setStatus("Connecting...");
+        s.fetchAbort = new AbortController();
+        const CHUNK_SIZE = 4 * 1024 * 1024; // 4 MB
+        const MAX_RETRIES = 6;
         let offset = 0;
-        const contentLength = parseInt(res.headers.get("content-length") || "0");
+        let totalLength: number | null = null;
         let firstChunkTime = 0;
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done || s.cancelled) break;
+        chunkLoop: while (!s.cancelled) {
+          const rangeEnd: number = totalLength != null
+            ? Math.min(offset + CHUNK_SIZE - 1, totalLength - 1)
+            : offset + CHUNK_SIZE - 1;
+          if (totalLength != null && offset >= totalLength) break;
+
+          let chunk: ArrayBuffer | null = null;
+          for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            if (s.cancelled) break chunkLoop;
+            try {
+              const r: Response = await fetch(streamUrl, {
+                signal: s.fetchAbort.signal,
+                headers: { Range: `bytes=${offset}-${rangeEnd}` },
+              });
+              if (!r.ok && r.status !== 200 && r.status !== 206) {
+                throw new Error(`HTTP ${r.status}`);
+              }
+              // Pull total length from Content-Range on the first successful chunk.
+              if (totalLength == null) {
+                const cr = r.headers.get("content-range");
+                const m = cr && cr.match(/\/(\d+)/);
+                if (m) totalLength = parseInt(m[1]);
+                else if (r.headers.get("content-length")) {
+                  // No Content-Range header → server doesn't support ranges, treat as full body.
+                  totalLength = parseInt(r.headers.get("content-length") || "0") || null;
+                }
+              }
+              chunk = await r.arrayBuffer();
+              break;
+            } catch (err) {
+              if (s.cancelled || (err instanceof DOMException && err.name === "AbortError")) break chunkLoop;
+              if (attempt === MAX_RETRIES) {
+                throw new Error(`chunk ${offset} failed after ${MAX_RETRIES} retries: ${err instanceof Error ? err.message : err}`);
+              }
+              const backoff = Math.min(8000, 500 * Math.pow(2, attempt));
+              setStatus(`Network hiccup — retrying chunk ${Math.round(offset / 1024 / 1024)} MB (try ${attempt + 1})`);
+              await new Promise((res) => setTimeout(res, backoff));
+            }
+          }
+          if (!chunk || s.cancelled) break;
 
           if (!firstChunkTime) {
             firstChunkTime = Date.now();
             setStatus("Receiving video...");
           }
 
-          const buf = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer & { fileStart: number };
+          // Hand the chunk to mp4box. fileStart MUST be the absolute byte offset
+          // so mp4box stitches the boxes back together correctly.
+          const buf = chunk as ArrayBuffer & { fileStart: number };
           buf.fileStart = offset;
           offset += buf.byteLength;
 
-          const kb = Math.round(offset / 1024);
-          const pct = contentLength > 0 ? ` (${Math.round((offset / contentLength) * 100)}%)` : "";
-          if (!s.started) setStatus(`Buffering... ${kb} KB${pct}`);
+          const mb = (offset / 1024 / 1024).toFixed(1);
+          const pct = totalLength != null && totalLength > 0 ? ` (${Math.round((offset / totalLength) * 100)}%)` : "";
+          if (!s.started) setStatus(`Buffering... ${mb} MB${pct}`);
 
           try { mp4.appendBuffer(buf); } catch (e) {
             console.warn("[WasmPlayer] appendBuffer error:", e);
@@ -266,6 +405,9 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
           // Free decoded samples we've already drawn so mp4box's internal
           // buffer doesn't grow unbounded across long playback sessions.
           try { mp4.releaseUsedSamples?.(s.videoTrackId, s.framesDrawn); } catch {}
+
+          // Stop if we read fewer bytes than requested (server signaled EOF).
+          if (chunk.byteLength < CHUNK_SIZE) break;
         }
 
         try { mp4.flush(); } catch {}
@@ -287,15 +429,36 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
 
     init();
 
+    // Stall watchdog: if playback has started but the frame queue stays empty
+    // and audio keeps advancing, we know the network died (cell drop, tunnel
+    // restart, expired URL). Soft-reload from the current playhead so the user
+    // doesn't have to do anything.
+    const stallCheckId = setInterval(() => {
+      if (s.cancelled || !s.started || s.paused || s.recovering) return;
+      const audio = audioRef.current;
+      if (!audio || audio.paused) return;
+      if (s.frameQueue.length > 0) return;
+      const sinceLastFrame = performance.now() - (s.lastFrameAt || s.startTime);
+      if (sinceLastFrame < 8000) return;
+
+      console.warn(`[WasmPlayer] stall detected (${Math.round(sinceLastFrame / 1000)}s without a frame), recovering`);
+      s.recovering = true;
+      setStatus("Reconnecting...");
+      restartFromTime(audio.currentTime);
+      // 12s cooldown so we don't fire again while the recovery is still loading.
+      setTimeout(() => { s.recovering = false; }, 12000);
+    }, 1000);
+
     return () => {
       s.cancelled = true;
+      clearInterval(stallCheckId);
       try { s.fetchAbort?.abort(); } catch {}
       cancelAnimationFrame(s.rafId);
       s.frameQueue.forEach((f) => { try { f.close(); } catch {} });
       s.frameQueue = [];
       try { s.videoDecoder?.close(); } catch {}
     };
-  }, [streamUrl, renderLoop, startPlayback, onError]);
+  }, [streamUrl, audioStreamUrl, renderLoop, startPlayback, onError, restartFromTime]);
 
   const togglePlay = () => {
     const s = stateRef.current;
@@ -316,95 +479,12 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
 
   const seekTo = (clientX: number) => {
     const bar = seekBarRef.current;
-    const audio = audioRef.current;
     const s = stateRef.current;
     if (!bar || !s.totalDuration) return;
     const rect = bar.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const targetTime = pct * s.totalDuration;
-
-    // Seek audio (the <audio> element handles its own range requests against
-    // the audio-only DASH stream, so this works for arbitrarily long videos).
-    if (audio && isFinite(targetTime)) audio.currentTime = targetTime;
-
-    // Reset video clock so the render loop syncs to the seek target.
-    s.startTime = performance.now() - targetTime * 1000;
-
-    // Flush all queued frames so we don't paint stale ones from the previous position.
-    while (s.frameQueue.length > 0) {
-      s.frameQueue.shift()!.close();
-    }
-
-    if (!s.videoConfig || !s.MP4Box) {
-      setProgress(pct * 100);
-      setCurrentTime(targetTime);
-      return;
-    }
-
-    // Re-decode from the seek point. Instead of replaying a stored full buffer
-    // (which would require keeping the entire video in RAM — OOM on long videos),
-    // we abort the current network fetch and start a new one. The browser will
-    // re-request the stream from byte 0; on long videos most of the time will be
-    // spent downloading until we reach the seek target. This is slower than a
-    // local seek but uses bounded memory.
-    try { s.fetchAbort?.abort(); } catch {}
-    try { s.videoDecoder?.reset(); } catch {}
-    try { s.videoDecoder?.configure(s.videoConfig); } catch {}
-
-    const mp4 = s.MP4Box.createFile();
-    s.mp4File = mp4;
-    const targetUs = targetTime * 1_000_000;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mp4.onReady = (info: any) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const vt = info.tracks.find((t: any) => t.type === "video");
-      if (vt) {
-        mp4.setExtractionOptions(vt.id, "video", { nbSamples: 100 });
-        mp4.seek(targetTime, true);
-        mp4.start();
-      }
-    };
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mp4.onSamples = (_id: number, type: string, samples: any[]) => {
-      if (type !== "video" || !s.videoDecoder || s.videoDecoder.state !== "configured") return;
-      for (const sample of samples) {
-        const ts = (sample.cts * 1_000_000) / sample.timescale;
-        if (ts < targetUs - 1_000_000) continue;
-        try {
-          s.videoDecoder.decode(new EncodedVideoChunk({
-            type: sample.is_sync ? "key" : "delta",
-            timestamp: ts,
-            duration: (sample.duration * 1_000_000) / sample.timescale,
-            data: sample.data,
-          }));
-        } catch { /* decode error */ }
-      }
-    };
-
-    // Refetch the stream and feed it to the new mp4box parser.
-    (async () => {
-      try {
-        s.fetchAbort = new AbortController();
-        const res = await fetch(streamUrl, { signal: s.fetchAbort.signal });
-        if (!res.ok || !res.body) return;
-        const reader = res.body.getReader();
-        let offset = 0;
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done || s.cancelled) break;
-          const buf = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer & { fileStart: number };
-          buf.fileStart = offset;
-          offset += buf.byteLength;
-          try { mp4.appendBuffer(buf); } catch {}
-        }
-        try { mp4.flush(); } catch {}
-      } catch {
-        /* aborted by another seek or unmount — fine */
-      }
-    })();
-
+    restartFromTime(targetTime);
     setProgress(pct * 100);
     setCurrentTime(targetTime);
   };
