@@ -31,7 +31,9 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     MP4Box: null as any,
     videoTrackId: 0,
     videoConfig: null as VideoDecoderConfig | null,
-    fullBuffer: null as ArrayBuffer | null,
+    // Abort controller for the in-flight stream fetch — lets seekTo cancel
+    // and re-fetch from a new offset without leaking the previous reader.
+    fetchAbort: null as AbortController | null,
   });
 
   const [playing, setPlaying] = useState(false);
@@ -96,10 +98,8 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     setLoading(false);
     setPlaying(true);
 
-    // Start render loop
-    renderLoop();
-
-    // Start render loop first, then audio
+    // Start render loop, then audio (with a small delay so the canvas has
+    // a frame ready before audio kicks in — avoids audio playing over a black canvas).
     renderLoop();
 
     setTimeout(() => {
@@ -218,12 +218,18 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
         };
 
 
-        // Stream and play — feed chunks to MP4Box as they arrive
+        // Stream and play — feed chunks to MP4Box as they arrive.
+        // We DO NOT keep the chunks around: long videos in Tesla's
+        // memory-constrained browser would OOM. mp4box keeps its own
+        // sample index, and seeks refetch from the network.
         setStatus("Connecting...");
-        const res = await fetch(streamUrl);
+        s.fetchAbort = new AbortController();
+        const res = await fetch(streamUrl, { signal: s.fetchAbort.signal });
         if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
-        // Set audio source — use separate audio URL if provided, otherwise same stream
+        // Set audio source — use separate audio URL if provided, otherwise same stream.
+        // For DASH-split YouTube, audioStreamUrl is a small audio-only m4a,
+        // which is much smaller than the muxed video file.
         const audio = audioRef.current;
         if (audio) {
           audio.src = audioStreamUrl || streamUrl;
@@ -234,7 +240,6 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
         const reader = res.body.getReader();
         let offset = 0;
         const contentLength = parseInt(res.headers.get("content-length") || "0");
-        const allChunks: Uint8Array[] = [];
         let firstChunkTime = 0;
 
         while (true) {
@@ -245,8 +250,6 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
             firstChunkTime = Date.now();
             setStatus("Receiving video...");
           }
-
-          allChunks.push(new Uint8Array(value));
 
           const buf = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer & { fileStart: number };
           buf.fileStart = offset;
@@ -260,15 +263,12 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
             console.warn("[WasmPlayer] appendBuffer error:", e);
           }
 
+          // Free decoded samples we've already drawn so mp4box's internal
+          // buffer doesn't grow unbounded across long playback sessions.
+          try { mp4.releaseUsedSamples?.(s.videoTrackId, s.framesDrawn); } catch {}
         }
 
         try { mp4.flush(); } catch {}
-
-        // Store full buffer for seeking
-        const full = new Uint8Array(offset);
-        let pos = 0;
-        for (const c of allChunks) { full.set(c, pos); pos += c.byteLength; }
-        s.fullBuffer = full.buffer;
 
         if (!s.started && s.frameQueue.length > 0) startPlayback();
         if (!s.started) {
@@ -289,10 +289,11 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
 
     return () => {
       s.cancelled = true;
+      try { s.fetchAbort?.abort(); } catch {}
       cancelAnimationFrame(s.rafId);
       s.frameQueue.forEach((f) => { try { f.close(); } catch {} });
       s.frameQueue = [];
-      try { s.videoDecoder?.close(); } catch {};
+      try { s.videoDecoder?.close(); } catch {}
     };
   }, [streamUrl, renderLoop, startPlayback, onError]);
 
@@ -322,66 +323,87 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const targetTime = pct * s.totalDuration;
 
-    // Seek audio
+    // Seek audio (the <audio> element handles its own range requests against
+    // the audio-only DASH stream, so this works for arbitrarily long videos).
     if (audio && isFinite(targetTime)) audio.currentTime = targetTime;
 
-    // Reset video timing
+    // Reset video clock so the render loop syncs to the seek target.
     s.startTime = performance.now() - targetTime * 1000;
 
-    // Flush ALL existing frames
+    // Flush all queued frames so we don't paint stale ones from the previous position.
     while (s.frameQueue.length > 0) {
       s.frameQueue.shift()!.close();
     }
 
-    // Re-decode from the seek point
-    if (s.fullBuffer && s.videoConfig && s.MP4Box) {
-      try {
-        // Reset and reconfigure decoder
-        s.videoDecoder?.reset();
-        s.videoDecoder?.configure(s.videoConfig);
-
-        // Create a fresh MP4Box file and re-parse the buffer
-        const mp4 = s.MP4Box.createFile();
-        const targetUs = targetTime * 1_000_000;
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        mp4.onReady = (info: any) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const vt = info.tracks.find((t: any) => t.type === "video");
-          if (vt) {
-            mp4.setExtractionOptions(vt.id, "video", { nbSamples: 100 });
-            mp4.seek(targetTime, true);
-            mp4.start();
-          }
-        };
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        mp4.onSamples = (_id: number, type: string, samples: any[]) => {
-          if (type !== "video" || !s.videoDecoder || s.videoDecoder.state !== "configured") return;
-          for (const sample of samples) {
-            const ts = (sample.cts * 1_000_000) / sample.timescale;
-            // Only decode frames at or after seek target
-            if (ts < targetUs - 1_000_000) continue;
-            try {
-              s.videoDecoder.decode(new EncodedVideoChunk({
-                type: sample.is_sync ? "key" : "delta",
-                timestamp: ts,
-                duration: (sample.duration * 1_000_000) / sample.timescale,
-                data: sample.data,
-              }));
-            } catch { /* decode error */ }
-          }
-        };
-
-        // Feed the stored buffer
-        const buf = s.fullBuffer.slice(0) as ArrayBuffer & { fileStart: number };
-        buf.fileStart = 0;
-        mp4.appendBuffer(buf);
-        mp4.flush();
-      } catch {
-        // Seek failed
-      }
+    if (!s.videoConfig || !s.MP4Box) {
+      setProgress(pct * 100);
+      setCurrentTime(targetTime);
+      return;
     }
+
+    // Re-decode from the seek point. Instead of replaying a stored full buffer
+    // (which would require keeping the entire video in RAM — OOM on long videos),
+    // we abort the current network fetch and start a new one. The browser will
+    // re-request the stream from byte 0; on long videos most of the time will be
+    // spent downloading until we reach the seek target. This is slower than a
+    // local seek but uses bounded memory.
+    try { s.fetchAbort?.abort(); } catch {}
+    try { s.videoDecoder?.reset(); } catch {}
+    try { s.videoDecoder?.configure(s.videoConfig); } catch {}
+
+    const mp4 = s.MP4Box.createFile();
+    s.mp4File = mp4;
+    const targetUs = targetTime * 1_000_000;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mp4.onReady = (info: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vt = info.tracks.find((t: any) => t.type === "video");
+      if (vt) {
+        mp4.setExtractionOptions(vt.id, "video", { nbSamples: 100 });
+        mp4.seek(targetTime, true);
+        mp4.start();
+      }
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mp4.onSamples = (_id: number, type: string, samples: any[]) => {
+      if (type !== "video" || !s.videoDecoder || s.videoDecoder.state !== "configured") return;
+      for (const sample of samples) {
+        const ts = (sample.cts * 1_000_000) / sample.timescale;
+        if (ts < targetUs - 1_000_000) continue;
+        try {
+          s.videoDecoder.decode(new EncodedVideoChunk({
+            type: sample.is_sync ? "key" : "delta",
+            timestamp: ts,
+            duration: (sample.duration * 1_000_000) / sample.timescale,
+            data: sample.data,
+          }));
+        } catch { /* decode error */ }
+      }
+    };
+
+    // Refetch the stream and feed it to the new mp4box parser.
+    (async () => {
+      try {
+        s.fetchAbort = new AbortController();
+        const res = await fetch(streamUrl, { signal: s.fetchAbort.signal });
+        if (!res.ok || !res.body) return;
+        const reader = res.body.getReader();
+        let offset = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done || s.cancelled) break;
+          const buf = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength) as ArrayBuffer & { fileStart: number };
+          buf.fileStart = offset;
+          offset += buf.byteLength;
+          try { mp4.appendBuffer(buf); } catch {}
+        }
+        try { mp4.flush(); } catch {}
+      } catch {
+        /* aborted by another seek or unmount — fine */
+      }
+    })();
 
     setProgress(pct * 100);
     setCurrentTime(targetTime);
