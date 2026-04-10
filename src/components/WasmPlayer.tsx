@@ -360,12 +360,16 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
                 throw new Error(`HTTP ${r.status}`);
               }
               // Pull total length from Content-Range on the first successful chunk.
+              // Extract total file length from Content-Range (e.g. "bytes 0-4194303/91807306").
+              // Only Content-Range gives us the real total — Content-Length on a 206 is
+              // just the chunk size, which would prematurely end the download loop.
               if (totalLength == null) {
                 const cr = r.headers.get("content-range");
                 const m = cr && cr.match(/\/(\d+)/);
                 if (m) totalLength = parseInt(m[1]);
-                else if (r.headers.get("content-length")) {
-                  // No Content-Range header → server doesn't support ranges, treat as full body.
+                // If no Content-Range (server doesn't support ranges), use Content-Length
+                // ONLY for a non-partial response (status 200).
+                else if (r.status === 200 && r.headers.get("content-length")) {
                   totalLength = parseInt(r.headers.get("content-length") || "0") || null;
                 }
               }
