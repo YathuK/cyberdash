@@ -164,52 +164,46 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
       }
     };
 
-    // Refetch the stream in chunks (same retry logic as the initial fetch
-    // so cell drops mid-recovery don't kill us a second time).
+    // Refetch the stream with the same streaming approach as the initial load
+    // (small ~16 KB pieces via reader.read()) so mp4box stays fed continuously
+    // and the render loop isn't blocked. Reconnects on failure.
     (async () => {
-      const CHUNK_SIZE = 4 * 1024 * 1024;
       const MAX_RETRIES = 6;
       let offset = 0;
-      let totalLength: number | null = null;
+      let retries = 0;
       try {
         s.fetchAbort = new AbortController();
         while (!s.cancelled) {
-          if (totalLength != null && offset >= totalLength) break;
-          const rangeEnd: number = totalLength != null
-            ? Math.min(offset + CHUNK_SIZE - 1, totalLength - 1)
-            : offset + CHUNK_SIZE - 1;
-          let chunk: ArrayBuffer | null = null;
-          for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-            if (s.cancelled) return;
-            try {
-              const r: Response = await fetch(streamUrl, {
-                signal: s.fetchAbort.signal,
-                headers: { Range: `bytes=${offset}-${rangeEnd}` },
-              });
-              if (!r.ok && r.status !== 200 && r.status !== 206) throw new Error("HTTP " + r.status);
-              if (totalLength == null) {
-                const cr = r.headers.get("content-range");
-                const m = cr && cr.match(/\/(\d+)/);
-                if (m) totalLength = parseInt(m[1]);
-              }
-              chunk = await r.arrayBuffer();
-              break;
-            } catch (err) {
-              if (s.cancelled || (err instanceof DOMException && err.name === "AbortError")) return;
-              if (attempt === MAX_RETRIES) return;
-              await new Promise((res) => setTimeout(res, Math.min(8000, 500 * Math.pow(2, attempt))));
+          try {
+            const r: Response = await fetch(streamUrl, {
+              signal: s.fetchAbort.signal,
+              headers: { Range: `bytes=${offset}-` },
+            });
+            if (!r.ok && r.status !== 200 && r.status !== 206) throw new Error("HTTP " + r.status);
+            if (!r.body) throw new Error("No body");
+            retries = 0;
+            const reader = r.body.getReader();
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done || s.cancelled) break;
+              const buf = value.buffer.slice(
+                value.byteOffset, value.byteOffset + value.byteLength
+              ) as ArrayBuffer & { fileStart: number };
+              buf.fileStart = offset;
+              offset += buf.byteLength;
+              try { mp4.appendBuffer(buf); } catch {}
             }
+            break; // stream ended normally
+          } catch (err) {
+            if (s.cancelled || (err instanceof DOMException && err.name === "AbortError")) return;
+            retries++;
+            if (retries > MAX_RETRIES) return;
+            await new Promise((res) => setTimeout(res, Math.min(8000, 500 * Math.pow(2, retries - 1))));
           }
-          if (!chunk) break;
-          const buf = chunk as ArrayBuffer & { fileStart: number };
-          buf.fileStart = offset;
-          offset += buf.byteLength;
-          try { mp4.appendBuffer(buf); } catch {}
-          if (chunk.byteLength < CHUNK_SIZE) break;
         }
         try { mp4.flush(); } catch {}
       } catch {
-        /* aborted by another restart or unmount — fine */
+        /* aborted — fine */
       }
     })();
   }, [streamUrl]);

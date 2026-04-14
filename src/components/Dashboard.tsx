@@ -55,8 +55,13 @@ export default function Dashboard() {
       {viewer?.type === "youtube" && (
         <CanvasPlayer videoId={viewer.videoId} title={viewer.title} onClose={() => setViewer({ type: "youtube-browse" })} />
       )}
-      {viewer?.type === "youtube-browse" && (
-        <YouTubeBrowser onPlay={(videoId, title) => setViewer({ type: "youtube", videoId, title })} onClose={() => setViewer(null)} />
+      {/* Keep YouTubeBrowser mounted (but hidden) while a video plays so
+          search results, scroll position, and query are preserved when the
+          user closes the player. */}
+      {(viewer?.type === "youtube-browse" || viewer?.type === "youtube") && (
+        <div style={{ display: viewer.type === "youtube-browse" ? "contents" : "none" }}>
+          <YouTubeBrowser onPlay={(videoId, title) => setViewer({ type: "youtube", videoId, title })} onClose={() => setViewer(null)} />
+        </div>
       )}
       {viewer?.type === "einthusan-browse" && (
         <EinthusanBrowser onPlay={(_id, title, url) => setViewer({ type: "einthusan-play", title, streamUrl: url })} onClose={() => setViewer(null)} />
