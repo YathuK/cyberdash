@@ -330,88 +330,97 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
           audio.load();
         }
 
-        // Chunked range fetching with retry. The original single-fetch approach
-        // died completely on the first cell dead-zone — fatal for highway driving.
-        // Now each chunk is its own HTTP Range request, and a failed chunk only
-        // costs a retry instead of restarting the whole video.
+        // Streaming Range fetch with auto-reconnect. Streams the response body
+        // in small ~16 KB pieces (just like the browser's native ReadableStream)
+        // so mp4box never blocks the main thread for long. If the connection drops
+        // (cell dead zone, tunnel restart), we reconnect from the last byte offset
+        // with a fresh Range request — no need to restart the whole video.
         setStatus("Connecting...");
         s.fetchAbort = new AbortController();
-        const CHUNK_SIZE = 4 * 1024 * 1024; // 4 MB
         const MAX_RETRIES = 6;
         let offset = 0;
         let totalLength: number | null = null;
         let firstChunkTime = 0;
+        let retryCount = 0;
 
-        chunkLoop: while (!s.cancelled) {
-          const rangeEnd: number = totalLength != null
-            ? Math.min(offset + CHUNK_SIZE - 1, totalLength - 1)
-            : offset + CHUNK_SIZE - 1;
-          if (totalLength != null && offset >= totalLength) break;
-
-          let chunk: ArrayBuffer | null = null;
-          for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-            if (s.cancelled) break chunkLoop;
-            try {
-              const r: Response = await fetch(streamUrl, {
-                signal: s.fetchAbort.signal,
-                headers: { Range: `bytes=${offset}-${rangeEnd}` },
-              });
-              if (!r.ok && r.status !== 200 && r.status !== 206) {
-                throw new Error(`HTTP ${r.status}`);
-              }
-              // Pull total length from Content-Range on the first successful chunk.
-              // Extract total file length from Content-Range (e.g. "bytes 0-4194303/91807306").
-              // Only Content-Range gives us the real total — Content-Length on a 206 is
-              // just the chunk size, which would prematurely end the download loop.
-              if (totalLength == null) {
-                const cr = r.headers.get("content-range");
-                const m = cr && cr.match(/\/(\d+)/);
-                if (m) totalLength = parseInt(m[1]);
-                // If no Content-Range (server doesn't support ranges), use Content-Length
-                // ONLY for a non-partial response (status 200).
-                else if (r.status === 200 && r.headers.get("content-length")) {
-                  totalLength = parseInt(r.headers.get("content-length") || "0") || null;
-                }
-              }
-              chunk = await r.arrayBuffer();
-              break;
-            } catch (err) {
-              if (s.cancelled || (err instanceof DOMException && err.name === "AbortError")) break chunkLoop;
-              if (attempt === MAX_RETRIES) {
-                throw new Error(`chunk ${offset} failed after ${MAX_RETRIES} retries: ${err instanceof Error ? err.message : err}`);
-              }
-              const backoff = Math.min(8000, 500 * Math.pow(2, attempt));
-              setStatus(`Network hiccup — retrying chunk ${Math.round(offset / 1024 / 1024)} MB (try ${attempt + 1})`);
-              await new Promise((res) => setTimeout(res, backoff));
+        while (!s.cancelled) {
+          try {
+            const fetchHeaders: Record<string, string> = {};
+            // Always use a Range header so the proxy returns Content-Range with
+            // the total file size (needed for progress display).
+            if (offset > 0 || totalLength == null) {
+              fetchHeaders["Range"] = `bytes=${offset}-`;
             }
+
+            const r: Response = await fetch(streamUrl, {
+              signal: s.fetchAbort.signal,
+              headers: fetchHeaders,
+            });
+            if (!r.ok && r.status !== 200 && r.status !== 206) {
+              throw new Error(`HTTP ${r.status}`);
+            }
+
+            // Read total file size from Content-Range on first successful response.
+            if (totalLength == null) {
+              const cr = r.headers.get("content-range");
+              const m = cr && cr.match(/\/(\d+)/);
+              if (m) totalLength = parseInt(m[1]);
+              else if (r.status === 200 && r.headers.get("content-length")) {
+                totalLength = parseInt(r.headers.get("content-length") || "0") || null;
+              }
+            }
+
+            retryCount = 0; // successful connection — reset retries
+
+            if (!r.body) throw new Error("No response body");
+            const reader = r.body.getReader();
+
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done || s.cancelled) break;
+
+              if (!firstChunkTime) {
+                firstChunkTime = Date.now();
+                setStatus("Receiving video...");
+              }
+
+              // Feed each small piece (~16 KB) to mp4box immediately so the main
+              // thread stays responsive and the render loop keeps firing smoothly.
+              const buf = value.buffer.slice(
+                value.byteOffset, value.byteOffset + value.byteLength
+              ) as ArrayBuffer & { fileStart: number };
+              buf.fileStart = offset;
+              offset += buf.byteLength;
+
+              const mb = (offset / 1024 / 1024).toFixed(1);
+              const pct = totalLength != null && totalLength > 0
+                ? ` (${Math.round((offset / totalLength) * 100)}%)`
+                : "";
+              if (!s.started) setStatus(`Buffering... ${mb} MB${pct}`);
+
+              try { mp4.appendBuffer(buf); } catch (e) {
+                console.warn("[WasmPlayer] appendBuffer error:", e);
+              }
+
+              // Free decoded samples we've already drawn so mp4box's internal
+              // buffer doesn't grow unbounded across long playback sessions.
+              try { mp4.releaseUsedSamples?.(s.videoTrackId, s.framesDrawn); } catch {}
+            }
+
+            // Stream ended normally (EOF) — we're done.
+            break;
+
+          } catch (err) {
+            if (s.cancelled || (err instanceof DOMException && err.name === "AbortError")) break;
+            retryCount++;
+            if (retryCount > MAX_RETRIES) {
+              throw new Error(`Stream failed after ${MAX_RETRIES} retries at ${Math.round(offset / 1024)}KB: ${err instanceof Error ? err.message : err}`);
+            }
+            const backoff = Math.min(8000, 500 * Math.pow(2, retryCount - 1));
+            setStatus(`Network hiccup — reconnecting from ${(offset / 1024 / 1024).toFixed(1)} MB (try ${retryCount})`);
+            await new Promise((resolve) => setTimeout(resolve, backoff));
+            // Loop back to the top — reconnects with Range: bytes=offset-
           }
-          if (!chunk || s.cancelled) break;
-
-          if (!firstChunkTime) {
-            firstChunkTime = Date.now();
-            setStatus("Receiving video...");
-          }
-
-          // Hand the chunk to mp4box. fileStart MUST be the absolute byte offset
-          // so mp4box stitches the boxes back together correctly.
-          const buf = chunk as ArrayBuffer & { fileStart: number };
-          buf.fileStart = offset;
-          offset += buf.byteLength;
-
-          const mb = (offset / 1024 / 1024).toFixed(1);
-          const pct = totalLength != null && totalLength > 0 ? ` (${Math.round((offset / totalLength) * 100)}%)` : "";
-          if (!s.started) setStatus(`Buffering... ${mb} MB${pct}`);
-
-          try { mp4.appendBuffer(buf); } catch (e) {
-            console.warn("[WasmPlayer] appendBuffer error:", e);
-          }
-
-          // Free decoded samples we've already drawn so mp4box's internal
-          // buffer doesn't grow unbounded across long playback sessions.
-          try { mp4.releaseUsedSamples?.(s.videoTrackId, s.framesDrawn); } catch {}
-
-          // Stop if we read fewer bytes than requested (server signaled EOF).
-          if (chunk.byteLength < CHUNK_SIZE) break;
         }
 
         try { mp4.flush(); } catch {}
