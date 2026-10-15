@@ -41,6 +41,7 @@ export default function EinthusanBrowser({ onPlay, onClose }: EinthusanBrowserPr
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [loadingMovie, setLoadingMovie] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     fetch(`${PROXY_URL}/ein/status`).then(r => r.json()).then(d => {
@@ -56,7 +57,8 @@ export default function EinthusanBrowser({ onPlay, onClose }: EinthusanBrowserPr
       const res = await fetch(`${PROXY_URL}/ein/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim(), password }),
+        signal: AbortSignal.timeout(45000),
       });
       const data = await res.json();
       if (data.success) {
@@ -94,7 +96,8 @@ export default function EinthusanBrowser({ onPlay, onClose }: EinthusanBrowserPr
       if (data.url) {
         const fullUrl = data.url.startsWith("/") ? `${PROXY_URL}${data.url}` : data.url;
         onPlay(movie.id, data.title || movie.title, fullUrl);
-      } else if (data.error?.includes("Login required")) {
+      } else if (/login/i.test(data.error || "")) {
+        setLoggedIn(false);
         setShowLogin(true);
       } else {
         alert(data.error || "Could not load movie");
@@ -122,10 +125,20 @@ export default function EinthusanBrowser({ onPlay, onClose }: EinthusanBrowserPr
 
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" autoFocus
+              autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="username"
               style={{ background: "rgba(31,41,55,0.6)", border: "1px solid rgba(75,85,99,0.5)", borderRadius: 12, padding: "14px 16px", color: "#fff", fontSize: 15, outline: "none", minHeight: 48 }} />
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password"
-              onKeyDown={e => e.key === "Enter" && handleLogin()}
-              style={{ background: "rgba(31,41,55,0.6)", border: "1px solid rgba(75,85,99,0.5)", borderRadius: 12, padding: "14px 16px", color: "#fff", fontSize: 15, outline: "none", minHeight: 48 }} />
+            {/* The car keyboard auto-capitalizes by default; turn that off and let
+                the user reveal the password to check what was actually typed. */}
+            <div style={{ display: "flex", gap: 8 }}>
+              <input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password"
+                autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="current-password"
+                onKeyDown={e => e.key === "Enter" && handleLogin()}
+                style={{ flex: 1, minWidth: 0, background: "rgba(31,41,55,0.6)", border: "1px solid rgba(75,85,99,0.5)", borderRadius: 12, padding: "14px 16px", color: "#fff", fontSize: 15, outline: "none", minHeight: 48 }} />
+              <button type="button" onClick={() => setShowPassword(v => !v)}
+                style={{ padding: "0 16px", background: "rgba(31,41,55,0.6)", color: "#9ca3af", border: "1px solid rgba(75,85,99,0.5)", borderRadius: 12, fontSize: 13, fontWeight: 600, cursor: "pointer", minHeight: 48 }}>
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
 
             {loginError && <div style={{ color: "#f87171", fontSize: 13 }}>{loginError}</div>}
 
@@ -172,7 +185,7 @@ export default function EinthusanBrowser({ onPlay, onClose }: EinthusanBrowserPr
         </div>
 
         <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-          {!loggedIn && <button onClick={() => setShowLogin(true)} style={{ padding: "8px 16px", background: "rgba(229,9,20,0.15)", color: "#E50914", border: "1px solid rgba(229,9,20,0.3)", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", minHeight: 40 }}>Sign In</button>}
+          <button onClick={() => setShowLogin(true)} style={{ padding: "8px 16px", background: "rgba(229,9,20,0.15)", color: "#E50914", border: "1px solid rgba(229,9,20,0.3)", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", minHeight: 40 }}>{loggedIn ? "Re-login" : "Sign In"}</button>
           <button onClick={onClose} style={{ padding: "8px 20px", background: "rgba(239,68,68,0.12)", color: "#f87171", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", minHeight: 40 }}>Close</button>
         </div>
       </div>
