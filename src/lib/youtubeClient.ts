@@ -10,9 +10,12 @@ export interface StreamResult {
 export async function getYouTubeStream(videoId: string): Promise<StreamResult> {
   const embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0&modestbranding=1`;
 
-  if (PROXY_URL) {
+  // Retry the proxy a few times before giving up: a tunnel blip or cold
+  // yt-dlp resolve shouldn't drop us to the embed, which Tesla can't play.
+  for (let attempt = 0; PROXY_URL && attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
     try {
-      const res = await fetch(`${PROXY_URL}/stream?v=${videoId}`);
+      const res = await fetch(`${PROXY_URL}/stream?v=${videoId}`, { signal: AbortSignal.timeout(60000) });
       const text = await res.text();
 
       if (text.startsWith("{")) {
@@ -32,6 +35,8 @@ export async function getYouTubeStream(videoId: string): Promise<StreamResult> {
             embedUrl,
           };
         }
+        // Proxy resolved the video and found it unplayable; retrying won't help.
+        if (data.fallback) break;
       }
     } catch (err) {
     }
