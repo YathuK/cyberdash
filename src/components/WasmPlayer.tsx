@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { savePosition, getPosition, clearPosition } from "@/lib/resume";
 
 interface WasmPlayerProps {
   videoId: string;
@@ -67,6 +68,12 @@ function parseHeader(b: Uint8Array): Omit<StreamHeader, "init"> | null {
 export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, onClose, onError }: WasmPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  // YouTube videos key by id; Einthusan/Pluto direct streams key by title.
+  const resumeKey = videoId || title;
+  // Saved position waiting to be applied once playback is ready; consumed once.
+  const resumePendingRef = useRef(0);
+  // startPlayback is declared before restartFromTime, so it reaches it via ref.
+  const restartFromTimeRef = useRef<(t: number) => void>(() => {});
   const stateRef = useRef({
     videoDecoder: null as VideoDecoder | null,
     frameQueue: [] as VideoFrame[],
@@ -165,9 +172,21 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     // a frame ready before audio kicks in — avoids audio playing over a black canvas).
     renderLoop();
 
+    // Saved position from a previous session: seek there now that the moov
+    // (duration, sample tables / sidx) is parsed. Skipped when the save is
+    // past the usable range (e.g. the video was basically finished).
+    const resume = resumePendingRef.current;
+    resumePendingRef.current = 0;
+    if (resume > 5 && s.totalDuration > 30 && resume < s.totalDuration - 15) {
+      setStatus(`Resuming from ${Math.floor(resume / 60)}:${Math.floor(resume % 60).toString().padStart(2, "0")}`);
+      restartFromTimeRef.current(resume);
+    }
+
     setTimeout(() => {
       const audio = audioRef.current;
-      if (audio) {
+      // Mid-seek (e.g. resuming), the frame handler starts audio at the
+      // target once video there is decoded — don't yank it back to 0 here.
+      if (audio && stateRef.current.seekTargetUs == null) {
         audio.currentTime = 0;
         audio.play().catch(() => {});
       }
@@ -319,11 +338,14 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     })();
   }, [streamUrl, ensureDecoder]);
 
+  restartFromTimeRef.current = restartFromTime;
+
   useEffect(() => {
     const s = stateRef.current;
     s.cancelled = false;
     s.started = false;
     s.framesDrawn = 0;
+    resumePendingRef.current = getPosition(resumeKey);
 
     async function init() {
       try {
@@ -581,6 +603,19 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     // and audio keeps advancing, we know the network died (cell drop, tunnel
     // restart, expired URL). Soft-reload from the current playhead so the user
     // doesn't have to do anything.
+    // Remember where we are every few seconds (and when the Tesla browser
+    // kills the page) so leaving a video and coming back resumes in place.
+    const currentPos = () => {
+      const audio = audioRef.current;
+      return audio && audio.currentTime > 0 ? audio.currentTime : 0;
+    };
+    const saveNow = () => {
+      const t = currentPos();
+      if (s.started && t > 5) savePosition(resumeKey, t, s.totalDuration);
+    };
+    const saveId = setInterval(saveNow, 5000);
+    window.addEventListener("pagehide", saveNow);
+
     const stallCheckId = setInterval(() => {
       if (s.cancelled || !s.started || s.paused || s.recovering) return;
       if (s.seekTargetUs != null) {
@@ -604,7 +639,10 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     }, 1000);
 
     return () => {
+      saveNow(); // final save on close
       s.cancelled = true;
+      clearInterval(saveId);
+      window.removeEventListener("pagehide", saveNow);
       clearInterval(stallCheckId);
       if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
       try { s.fetchAbort?.abort(); } catch {}
@@ -613,7 +651,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
       s.frameQueue = [];
       try { s.videoDecoder?.close(); } catch {}
     };
-  }, [streamUrl, audioStreamUrl, renderLoop, startPlayback, onError, restartFromTime]);
+  }, [streamUrl, audioStreamUrl, renderLoop, startPlayback, onError, restartFromTime, resumeKey]);
 
   const togglePlay = () => {
     const s = stateRef.current;
@@ -732,6 +770,14 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
             {playing
               ? <svg width={20} height={20} viewBox="0 0 24 24" fill="#FF0000"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>
               : <svg width={20} height={20} viewBox="0 0 24 24" fill="#FF0000"><path d="M8 5v14l11-7z" /></svg>}
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); clearPosition(resumeKey); restartFromTime(0); }} title="Start over" style={{
+            width: 48, height: 48, minHeight: 48, minWidth: 48, display: "flex", alignItems: "center", justifyContent: "center",
+            background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 999, cursor: "pointer",
+          }}>
+            <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" />
+            </svg>
           </button>
           <span style={{ color: "#9ca3af", fontSize: 13, fontFamily: "monospace" }}>{fmt(currentTime)} / {fmt(duration)}</span>
         </div>
