@@ -9,6 +9,7 @@ import EinthusanBrowser from "./EinthusanBrowser";
 import PlutoBrowser from "./PlutoBrowser";
 import WasmPlayerDirect from "./WasmPlayerDirect";
 import { getSessionId } from "@/lib/session";
+import { listResume, clearPosition, type ResumeItem } from "@/lib/resume";
 
 interface App {
   id: string;
@@ -32,6 +33,7 @@ export default function Dashboard() {
   const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewer, setViewer] = useState<ViewerState | null>(null);
+  const [keepWatching, setKeepWatching] = useState<ResumeItem[]>([]);
 
   const fetchApps = useCallback(async () => {
     try {
@@ -43,6 +45,28 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => { fetchApps(); }, [fetchApps]);
+
+  // Refresh the Keep Watching row on load and whenever a player closes.
+  useEffect(() => {
+    if (viewer === null) setKeepWatching(listResume(10));
+  }, [viewer]);
+
+  // Reopen the right player for a Keep Watching entry; the player's own
+  // auto-resume picks up the saved position.
+  const openResume = (item: ResumeItem) => {
+    if (item.kind === "youtube" && item.videoId) {
+      setViewer({ type: "youtube", videoId: item.videoId, title: item.title || "YouTube Video" });
+    } else if (item.kind === "ein" && item.streamUrl) {
+      setViewer({ type: "einthusan-play", title: item.title || item.key, streamUrl: item.streamUrl });
+    } else if (item.kind === "pluto" && item.streamUrl) {
+      setViewer({ type: "pluto-play", title: item.title || item.key, streamUrl: item.streamUrl });
+    }
+  };
+
+  const fmtTime = (sec: number) => `${Math.floor(sec / 60)}:${Math.floor(sec % 60).toString().padStart(2, "0")}`;
+  const resumable = keepWatching.filter(i =>
+    (i.kind === "youtube" && i.videoId) || ((i.kind === "ein" || i.kind === "pluto") && i.streamUrl)
+  );
 
   const otherApps = apps.filter((a) => a.icon !== "youtube" && a.icon !== "einthusan");
 
@@ -67,13 +91,13 @@ export default function Dashboard() {
         <EinthusanBrowser onPlay={(_id, title, url) => setViewer({ type: "einthusan-play", title, streamUrl: url })} onClose={() => setViewer(null)} />
       )}
       {viewer?.type === "einthusan-play" && (
-        <WasmPlayerDirect title={viewer.title} streamUrl={viewer.streamUrl} onClose={() => setViewer({ type: "einthusan-browse" })} />
+        <WasmPlayerDirect title={viewer.title} streamUrl={viewer.streamUrl} kind="ein" onClose={() => setViewer({ type: "einthusan-browse" })} />
       )}
       {viewer?.type === "pluto-browse" && (
         <PlutoBrowser onPlay={(_id, title, url) => setViewer({ type: "pluto-play", title, streamUrl: url })} onClose={() => setViewer(null)} />
       )}
       {viewer?.type === "pluto-play" && (
-        <WasmPlayerDirect title={viewer.title} streamUrl={viewer.streamUrl} onClose={() => setViewer({ type: "pluto-browse" })} />
+        <WasmPlayerDirect title={viewer.title} streamUrl={viewer.streamUrl} kind="pluto" onClose={() => setViewer({ type: "pluto-browse" })} />
       )}
 
       <div className="noise" style={{ width: "100vw", height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column", position: "relative" }}>
@@ -106,6 +130,64 @@ export default function Dashboard() {
             <div style={{ textAlign: "center", padding: "80px 0", color: "var(--cyan)", fontSize: 16 }}>Loading...</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 20, maxWidth: 900, margin: "0 auto" }}>
+
+              {/* ===== KEEP WATCHING ===== */}
+              {resumable.length > 0 && (
+                <div style={{ width: "100%" }}>
+                  <div style={{ color: "#e5e7eb", fontSize: 18, fontWeight: 800, letterSpacing: "-0.01em", margin: "0 0 10px 2px" }}>
+                    Keep Watching
+                  </div>
+                  <div className="scroll-area" style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 6 }}>
+                    {resumable.map(item => (
+                      <div key={item.key} onClick={() => openResume(item)} className="press-effect" style={{
+                        flexShrink: 0, width: 220, background: "rgba(17,24,39,0.8)",
+                        border: "1px solid rgba(75,85,99,0.35)", borderRadius: 14,
+                        overflow: "hidden", cursor: "pointer", position: "relative",
+                      }}>
+                        <div style={{ position: "relative", width: "100%", paddingTop: "56.25%", background: "#111827" }}>
+                          {item.kind === "youtube" && item.videoId ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={`https://i.ytimg.com/vi/${item.videoId}/mqdefault.jpg`} alt=""
+                              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            <div style={{
+                              position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                              background: item.kind === "ein" ? "linear-gradient(135deg, #eab308, #854d0e)" : "linear-gradient(135deg, #6366f1, #4338ca)",
+                              color: "#fff", fontSize: 34, fontWeight: 800,
+                            }}>{(item.title || "?").charAt(0).toUpperCase()}</div>
+                          )}
+                          {/* progress bar */}
+                          {item.d > 0 && (
+                            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 5, background: "rgba(0,0,0,0.6)" }}>
+                              <div style={{ width: `${Math.min(100, (item.t / item.d) * 100)}%`, height: "100%", background: "#FF0000" }} />
+                            </div>
+                          )}
+                          {/* play glyph */}
+                          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <div style={{ width: 44, height: 44, borderRadius: 999, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <svg width={20} height={20} viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
+                            </div>
+                          </div>
+                          {/* remove */}
+                          <button onClick={(e) => { e.stopPropagation(); clearPosition(item.key); setKeepWatching(listResume(10)); }} style={{
+                            position: "absolute", top: 6, right: 6, width: 32, height: 32,
+                            background: "rgba(0,0,0,0.65)", color: "#9ca3af", border: "none",
+                            borderRadius: 999, fontSize: 15, cursor: "pointer", lineHeight: 1,
+                          }}>✕</button>
+                        </div>
+                        <div style={{ padding: "8px 10px" }}>
+                          <div style={{ color: "#fff", fontSize: 13, fontWeight: 600, lineHeight: 1.3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", minHeight: 34 }}>
+                            {item.title || item.key}
+                          </div>
+                          <div style={{ color: "#6b7280", fontSize: 11, marginTop: 3 }}>
+                            {fmtTime(item.t)}{item.d > 0 ? ` / ${fmtTime(item.d)}` : ""} · tap to resume
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* ===== YOUTUBE ===== */}
               <div

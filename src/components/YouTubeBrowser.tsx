@@ -26,6 +26,23 @@ interface YouTubeBrowserProps {
   onClose: () => void;
 }
 
+const RECENT_KEY = "yavik:recent-searches:v1";
+const RECENT_MAX = 10;
+
+function readRecentSearches(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter((q) => typeof q === "string") : [];
+  } catch { return []; }
+}
+
+function pushRecentSearch(q: string): string[] {
+  const list = [q, ...readRecentSearches().filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, RECENT_MAX);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch {}
+  return list;
+}
+
 export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Video[]>([]);
@@ -33,6 +50,7 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [searchType, setSearchType] = useState<"video" | "channel">("video");
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
   // Auth
   const [ytLoggedIn, setYtLoggedIn] = useState(false);
@@ -51,6 +69,7 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
   const [tab, setTab] = useState<"home" | "subscriptions">("home");
 
   useEffect(() => {
+    setRecentSearches(readRecentSearches());
     fetch(`${PROXY_URL}/yt/auth/status`).then(r => r.json()).then(d => {
       setYtLoggedIn(d.loggedIn);
       if (d.loggedIn) { loadFeed(); loadSubscriptions(); }
@@ -117,8 +136,8 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
     } catch { setAuthCode("ERROR"); }
   };
 
-  const handleSearch = async () => {
-    const input = query.trim();
+  const runSearch = async (input: string) => {
+    input = input.trim();
     if (!input) return;
 
     // Direct URL or video ID
@@ -132,6 +151,7 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
     }
     if (videoId) { onPlay(videoId, "YouTube Video"); return; }
 
+    setRecentSearches(pushRecentSearch(input));
     setLoading(true);
     setSearched(true);
     setSelectedChannel(null);
@@ -151,6 +171,13 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
       } catch { setResults([]); }
     }
     setLoading(false);
+  };
+
+  const handleSearch = () => runSearch(query);
+
+  const searchRecent = (q: string) => {
+    setQuery(q);
+    runSearch(q);
   };
 
   // Video grid component
@@ -283,6 +310,21 @@ export default function YouTubeBrowser({ onPlay, onClose }: YouTubeBrowserProps)
           <button onClick={onClose} style={{ padding: "8px 20px", background: "rgba(239,68,68,0.12)", color: "#f87171", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", minHeight: 40 }}>Close</button>
         </div>
       </div>
+
+      {/* Recently searched — one tap to re-run while driving */}
+      {recentSearches.length > 0 && (
+        <div className="scroll-area" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 20px 0", overflowX: "auto", flexShrink: 0 }}>
+          <span style={{ color: "#6b7280", fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", flexShrink: 0 }}>Recent</span>
+          {recentSearches.map(q => (
+            <button key={q} onClick={() => searchRecent(q)} style={{
+              flexShrink: 0, padding: "8px 16px", minHeight: 40,
+              background: "rgba(31,41,55,0.6)", color: "#d1d5db",
+              border: "1px solid rgba(75,85,99,0.5)", borderRadius: 999,
+              fontSize: 14, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap",
+            }}>{q}</button>
+          ))}
+        </div>
+      )}
 
       {/* Tabs for logged in users */}
       {ytLoggedIn && !searched && (

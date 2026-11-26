@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { savePosition, getPosition, clearPosition } from "@/lib/resume";
+import { savePosition, getPosition, clearPosition, type ResumeKind } from "@/lib/resume";
 
 interface WasmPlayerProps {
   videoId: string;
@@ -12,6 +12,9 @@ interface WasmPlayerProps {
   onError?: () => void;
   // Re-resolve the stream and remount the player (transient failure recovery).
   onRetry?: () => void;
+  // Which service this stream came from — stored with the resume entry so
+  // the Keep Watching row can reopen the right player.
+  resumeKind?: ResumeKind;
 }
 
 interface StreamHeader {
@@ -67,7 +70,7 @@ function parseHeader(b: Uint8Array): Omit<StreamHeader, "init"> | null {
   return null;
 }
 
-export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, onClose, onError, onRetry }: WasmPlayerProps) {
+export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, onClose, onError, onRetry, resumeKind }: WasmPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   // YouTube videos key by id; Einthusan/Pluto direct streams key by title.
@@ -105,11 +108,16 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     seekTargetUs: null as number | null,
     seekStartedAt: 0,
     onFrame: null as ((frame: VideoFrame) => void) | null,
+    // Playhead in seconds, from the last DRAWN frame. The source of truth for
+    // resume saves and stall recovery — never the audio element, which can be
+    // blocked by autoplay policy (phones) and then reads 0 forever.
+    posSec: 0,
   });
   const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [needsAudioTap, setNeedsAudioTap] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
@@ -117,6 +125,21 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
   const [status, setStatus] = useState("Connecting...");
   const [seeking, setSeeking] = useState(false);
   const seekBarRef = useRef<HTMLDivElement>(null);
+
+  // Central audio starter. Phones (and sometimes the Tesla browser) block
+  // un-gestured audio.play() — when that happens we flag it and show a big
+  // "Tap for sound" button; video keeps playing on the wall clock meanwhile.
+  const tryPlayAudio = useCallback((syncToPlayhead: boolean) => {
+    const s = stateRef.current;
+    const audio = audioRef.current;
+    if (!audio || s.cancelled || s.paused) return;
+    try {
+      if (syncToPlayhead && Math.abs(audio.currentTime - s.posSec) > 1) {
+        audio.currentTime = s.posSec;
+      }
+    } catch { /* metadata not ready yet — play below still works from 0 */ }
+    audio.play().then(() => setNeedsAudioTap(false)).catch(() => setNeedsAudioTap(true));
+  }, []);
 
   const renderLoop = useCallback(() => {
     const s = stateRef.current;
@@ -153,6 +176,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
       s.lastFrameAt = performance.now();
 
       const sec = elapsedUs / 1_000_000;
+      s.posSec = sec;
       setCurrentTime(sec);
       if (s.totalDuration > 0) setProgress((sec / s.totalDuration) * 100);
     }
@@ -189,11 +213,11 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
       // Mid-seek (e.g. resuming), the frame handler starts audio at the
       // target once video there is decoded — don't yank it back to 0 here.
       if (audio && stateRef.current.seekTargetUs == null) {
-        audio.currentTime = 0;
-        audio.play().catch(() => {});
+        try { audio.currentTime = 0; } catch {}
+        tryPlayAudio(false);
       }
     }, 150);
-  }, [renderLoop]);
+  }, [renderLoop, tryPlayAudio]);
 
   // A decoder that hit an error (e.g. fed a delta frame with no keyframe)
   // closes itself for good, so rebuild it instead of just resetting.
@@ -230,6 +254,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     s.seekTargetUs = targetTime * 1_000_000;
     s.seekStartedAt = performance.now();
     s.startTime = performance.now() - targetTime * 1000;
+    s.posSec = targetTime;
     setLoading(true);
     setStatus("Seeking...");
 
@@ -372,8 +397,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
             s.startTime = performance.now() - frame.timestamp / 1000;
             s.lastFrameAt = performance.now();
             setLoading(false);
-            const audio = audioRef.current;
-            if (audio && s.started && !s.paused) audio.play().catch(() => {});
+            if (s.started) tryPlayAudio(false);
           }
           s.frameQueue.push(frame);
           // Start after 5 frames decoded
@@ -611,14 +635,12 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     const audioEl = audioRef.current;
     const onAudioError = () => {
       if (s.cancelled || !audioEl) return;
-      const t = audioEl.currentTime;
       console.warn("[WasmPlayer] audio element error — reloading audio track");
       setTimeout(() => {
         if (s.cancelled) return;
         try {
           audioEl.load();
-          audioEl.currentTime = t;
-          if (s.started && !s.paused && s.seekTargetUs == null) audioEl.play().catch(() => {});
+          if (s.started && s.seekTargetUs == null) tryPlayAudio(true);
         } catch { /* give up quietly; stall watchdog may still recover video */ }
       }, 1000);
     };
@@ -626,13 +648,16 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
 
     // Remember where we are every few seconds (and when the Tesla browser
     // kills the page) so leaving a video and coming back resumes in place.
-    const currentPos = () => {
-      const audio = audioRef.current;
-      return audio && audio.currentTime > 0 ? audio.currentTime : 0;
+    // Position comes from the render clock (posSec), NOT the audio element —
+    // blocked autoplay leaves audio.currentTime at 0 forever.
+    const meta = {
+      title,
+      videoId: videoId || undefined,
+      streamUrl: videoId ? undefined : streamUrl,
+      kind: resumeKind || (videoId ? ("youtube" as const) : ("direct" as const)),
     };
     const saveNow = () => {
-      const t = currentPos();
-      if (s.started && t > 5) savePosition(resumeKey, t, s.totalDuration);
+      if (s.started && s.posSec > 5) savePosition(resumeKey, s.posSec, s.totalDuration, meta);
     };
     const saveId = setInterval(saveNow, 5000);
     window.addEventListener("pagehide", saveNow);
@@ -645,16 +670,17 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
         restartFromTime(s.seekTargetUs / 1_000_000);
         return;
       }
-      const audio = audioRef.current;
-      if (!audio || audio.paused) return;
       if (s.frameQueue.length > 0) return;
+      // Video finished — don't restart-loop at the end.
+      if (s.totalDuration > 0 && s.posSec > s.totalDuration - 10) return;
       const sinceLastFrame = performance.now() - (s.lastFrameAt || s.startTime);
       if (sinceLastFrame < 8000) return;
 
       console.warn(`[WasmPlayer] stall detected (${Math.round(sinceLastFrame / 1000)}s without a frame), recovering`);
       s.recovering = true;
       setStatus("Reconnecting...");
-      restartFromTime(audio.currentTime);
+      // posSec tracks the last drawn frame — valid even when audio is blocked.
+      restartFromTime(s.posSec);
       // 12s cooldown so we don't fire again while the recovery is still loading.
       setTimeout(() => { s.recovering = false; }, 12000);
     }, 1000);
@@ -673,7 +699,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
       s.frameQueue = [];
       try { s.videoDecoder?.close(); } catch {}
     };
-  }, [streamUrl, audioStreamUrl, renderLoop, startPlayback, onError, restartFromTime, resumeKey]);
+  }, [streamUrl, audioStreamUrl, renderLoop, startPlayback, onError, restartFromTime, resumeKey, tryPlayAudio, title, videoId, resumeKind]);
 
   const togglePlay = () => {
     const s = stateRef.current;
@@ -682,7 +708,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
       s.paused = false;
       s.startTime += performance.now() - s.pausedAt;
       // Mid-seek, the frame handler starts audio once video is ready.
-      if (s.seekTargetUs == null) audio?.play();
+      if (s.seekTargetUs == null) tryPlayAudio(true);
       setPlaying(true);
       renderLoop();
     } else {
@@ -748,6 +774,24 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
 
       <div style={{ flex: 1, position: "relative", background: "#000", overflow: "hidden" }} onClick={togglePlay}>
         <canvas ref={canvasRef} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+
+        {/* Autoplay policy blocked the audio track — needs one real tap. */}
+        {needsAudioTap && !loading && !error && (
+          <button onClick={(e) => { e.stopPropagation(); tryPlayAudio(true); }} style={{
+            position: "absolute", top: 16, right: 16, zIndex: 3,
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "14px 24px", minHeight: 52,
+            background: "rgba(34,211,238,0.18)", color: "#22d3ee",
+            border: "2px solid rgba(34,211,238,0.5)", borderRadius: 12,
+            fontSize: 17, fontWeight: 700, cursor: "pointer",
+            boxShadow: "0 4px 24px rgba(0,0,0,0.6)",
+          }}>
+            <svg width={22} height={22} viewBox="0 0 24 24" fill="#22d3ee">
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 16.5 12zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+            </svg>
+            Tap for sound
+          </button>
+        )}
 
         {loading && (
           <div style={{ position: "absolute", inset: 0, zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.85)" }}>

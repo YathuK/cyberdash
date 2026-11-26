@@ -1,14 +1,29 @@
 // Resume positions, persisted in localStorage so a video reopened later —
 // even after the Tesla browser reloads the page between drives — continues
 // where it left off. Keyed by YouTube videoId (or title for direct streams).
+// Entries carry enough metadata to render a Netflix-style "Keep Watching"
+// row on the dashboard and reopen the right player.
 
 const KEY = "yavik:resume:v1";
 const MAX_ENTRIES = 50;
 
-interface Entry {
+export type ResumeKind = "youtube" | "ein" | "pluto" | "direct";
+
+export interface ResumeMeta {
+  title?: string;
+  videoId?: string;
+  streamUrl?: string;
+  kind?: ResumeKind;
+}
+
+interface Entry extends ResumeMeta {
   t: number; // seconds watched
   d: number; // duration in seconds (0 if unknown)
-  at: number; // last-updated epoch ms, for LRU eviction
+  at: number; // last-updated epoch ms, for LRU eviction + ordering
+}
+
+export interface ResumeItem extends Entry {
+  key: string;
 }
 
 type Store = Record<string, Entry>;
@@ -30,7 +45,7 @@ function write(store: Store) {
   }
 }
 
-export function savePosition(key: string, t: number, d: number) {
+export function savePosition(key: string, t: number, d: number, meta?: ResumeMeta) {
   if (!key || !isFinite(t) || t < 5) return;
   const store = read();
   // Watched to (nearly) the end: forget it so next open starts from the top.
@@ -41,7 +56,14 @@ export function savePosition(key: string, t: number, d: number) {
     }
     return;
   }
-  store[key] = { t: Math.floor(t), d: Math.floor(d || 0), at: Date.now() };
+  const prev = store[key];
+  store[key] = {
+    ...prev,
+    ...meta,
+    t: Math.floor(t),
+    d: Math.floor(d || prev?.d || 0),
+    at: Date.now(),
+  };
   const keys = Object.keys(store);
   if (keys.length > MAX_ENTRIES) {
     keys.sort((a, b) => store[a].at - store[b].at);
@@ -63,4 +85,14 @@ export function clearPosition(key: string) {
     delete store[key];
     write(store);
   }
+}
+
+// Most-recent-first list for the Keep Watching row.
+export function listResume(limit = 10): ResumeItem[] {
+  const store = read();
+  return Object.entries(store)
+    .map(([key, e]) => ({ key, ...e }))
+    .filter((e) => e.t > 5)
+    .sort((a, b) => b.at - a.at)
+    .slice(0, limit);
 }
