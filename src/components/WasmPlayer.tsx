@@ -10,6 +10,8 @@ interface WasmPlayerProps {
   audioStreamUrl?: string;
   onClose: () => void;
   onError?: () => void;
+  // Re-resolve the stream and remount the player (transient failure recovery).
+  onRetry?: () => void;
 }
 
 interface StreamHeader {
@@ -65,7 +67,7 @@ function parseHeader(b: Uint8Array): Omit<StreamHeader, "init"> | null {
   return null;
 }
 
-export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, onClose, onError }: WasmPlayerProps) {
+export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, onClose, onError, onRetry }: WasmPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   // YouTube videos key by id; Einthusan/Pluto direct streams key by title.
@@ -603,6 +605,25 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
     // and audio keeps advancing, we know the network died (cell drop, tunnel
     // restart, expired URL). Soft-reload from the current playhead so the user
     // doesn't have to do anything.
+    // If the audio element dies (expired URL, cell dead zone), reload it at
+    // the same position instead of playing the rest of the video silent.
+    // The proxy self-heals expired URLs server-side, so a reload is enough.
+    const audioEl = audioRef.current;
+    const onAudioError = () => {
+      if (s.cancelled || !audioEl) return;
+      const t = audioEl.currentTime;
+      console.warn("[WasmPlayer] audio element error — reloading audio track");
+      setTimeout(() => {
+        if (s.cancelled) return;
+        try {
+          audioEl.load();
+          audioEl.currentTime = t;
+          if (s.started && !s.paused && s.seekTargetUs == null) audioEl.play().catch(() => {});
+        } catch { /* give up quietly; stall watchdog may still recover video */ }
+      }, 1000);
+    };
+    audioEl?.addEventListener("error", onAudioError);
+
     // Remember where we are every few seconds (and when the Tesla browser
     // kills the page) so leaving a video and coming back resumes in place.
     const currentPos = () => {
@@ -643,6 +664,7 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
       s.cancelled = true;
       clearInterval(saveId);
       window.removeEventListener("pagehide", saveNow);
+      audioEl?.removeEventListener("error", onAudioError);
       clearInterval(stallCheckId);
       if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
       try { s.fetchAbort?.abort(); } catch {}
@@ -737,6 +759,13 @@ export default function WasmPlayer({ videoId, title, streamUrl, audioStreamUrl, 
         {error && (
           <div style={{ position: "absolute", inset: 0, zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.85)", gap: 12 }}>
             <div style={{ color: "#f87171", fontSize: 16, textAlign: "center", padding: "0 32px" }}>{error}</div>
+            {onRetry && (
+              <button onClick={(e) => { e.stopPropagation(); onRetry(); }} style={{
+                padding: "14px 36px", background: "rgba(34,211,238,0.12)", color: "#22d3ee",
+                border: "1px solid rgba(34,211,238,0.3)", borderRadius: 10,
+                fontSize: 16, fontWeight: 700, cursor: "pointer", minHeight: 48,
+              }}>Try Again</button>
+            )}
           </div>
         )}
 

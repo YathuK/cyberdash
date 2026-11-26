@@ -18,6 +18,19 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
   const [loading, setLoading] = useState(true);
   const [wasmCrashed, setWasmCrashed] = useState(false);
   const [statusMsg, setStatusMsg] = useState("Connecting to proxy...");
+  // Bumped by the Retry button: re-runs stream resolution and remounts the
+  // player fresh. The embed fallback can't play while driving, so the user
+  // needs a one-tap way back onto the proxy path after a transient failure.
+  const [attempt, setAttempt] = useState(0);
+
+  const retry = () => {
+    setWasmCrashed(false);
+    setStreamUrl(null);
+    setAudioUrl(null);
+    setLoading(true);
+    setStatusMsg("Retrying...");
+    setAttempt(a => a + 1);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +59,7 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
 
     load();
     return () => { cancelled = true; };
-  }, [videoId]);
+  }, [videoId, attempt]);
 
   if (loading) {
     return (
@@ -69,11 +82,18 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
           <span style={{ color: "#6b7280" }}>/</span>
           <span style={{ color: "#e5e7eb", fontSize: 14, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
         </div>
-        <button onClick={onClose} style={{
-          padding: "8px 24px", background: "rgba(239,68,68,0.12)", color: "#f87171",
-          border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8,
-          fontSize: 14, fontWeight: 600, cursor: "pointer", minHeight: 40,
-        }}>Close</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={retry} style={{
+            padding: "8px 24px", background: "rgba(34,211,238,0.12)", color: "#22d3ee",
+            border: "1px solid rgba(34,211,238,0.3)", borderRadius: 8,
+            fontSize: 14, fontWeight: 600, cursor: "pointer", minHeight: 40,
+          }}>Retry Stream</button>
+          <button onClick={onClose} style={{
+            padding: "8px 24px", background: "rgba(239,68,68,0.12)", color: "#f87171",
+            border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8,
+            fontSize: 14, fontWeight: 600, cursor: "pointer", minHeight: 40,
+          }}>Close</button>
+        </div>
       </div>
       <div style={{ flex: 1 }}>
         <iframe src={embedUrl || `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0`}
@@ -87,12 +107,14 @@ export default function CanvasPlayer({ videoId, title, onClose }: CanvasPlayerPr
     return (
       <ErrorBoundary fallback={embedPlayer}>
         <WasmPlayer
+          key={attempt}
           videoId={videoId}
           title={title}
           streamUrl={streamUrl}
           audioStreamUrl={audioUrl || streamUrl}
           onClose={onClose}
           onError={() => { setWasmCrashed(true); setStatusMsg("Player crashed"); }}
+          onRetry={retry}
         />
       </ErrorBoundary>
     );
