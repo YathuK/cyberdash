@@ -39,7 +39,9 @@ export default function Dashboard() {
     try {
       const res = await fetch("/api/apps");
       const data = await res.json();
-      setApps(data);
+      // A DB error returns an error object — never let that crash the
+      // dashboard; the three main cards are hardcoded and must always render.
+      setApps(Array.isArray(data) ? data : []);
     } catch {}
     setLoading(false);
   }, []);
